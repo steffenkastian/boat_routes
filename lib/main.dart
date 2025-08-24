@@ -186,6 +186,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     for (var i = 0; i < _points.length - 1; i++) {
       totalDistance += _distanceNm(_points[i], _points[i + 1]);
     }
+
   return Scaffold(
     appBar: AppBar(
       title: const Text('Routenplaner'),
@@ -217,38 +218,72 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                   compassEnabled: true,
                 ),
               ),
-              Expanded(
+ Expanded(
                 flex: 1,
                 child: Container(
                   color: Colors.grey.shade100,
-                  child: _points.isEmpty
-                      ? const Center(child: Text('Noch keine Punkte gesetzt'))
-                      : ListView.builder(
-                          itemCount: _points.length,
-                          itemBuilder: (context, index) {
-                            final point = _points[index];
-                            return Card(
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  child: Text('${index + 1}'),
-                                ),
-                                title: Text(
-                                  'Lat: ${point.latitude.toStringAsFixed(4)}\nLng: ${point.longitude.toStringAsFixed(4)}',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.red),
-                                  onPressed: () => _removePoint(index),
+                  child: Column(
+                    children: [
+                      // Liste der Punkte inkl. Teilstrecken
+                      Expanded(
+                              child: _points.isEmpty
+                                  ? const Center(child: Text('Noch keine Punkte gesetzt'))
+                                  : ListView.builder(
+                                      itemCount: _points.length,
+                                      itemBuilder: (context, index) {
+                                        final point = _points[index];
+
+                                        // --- NEU: Distanz vom vorherigen Punkt berechnen ---
+                                        double? segmentDistance;
+                                        if (index > 0) {
+                                          segmentDistance = _distanceNm(_points[index - 1], point);
+                                        }
+
+                                        return Card(
+                                          child: ListTile(
+                                            leading: CircleAvatar(
+                                              child: Text('${index + 1}'),
+                                            ),
+                                            title: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Lat: ${point.latitude.toStringAsFixed(4)}\nLng: ${point.longitude.toStringAsFixed(4)}',
+                                                  style: const TextStyle(fontSize: 12),
+                                                ),
+                                                // --- NEU: Distanz in sm anzeigen, falls nicht erster Punkt ---
+                                                if (segmentDistance != null)
+                                                  Text(
+                                                    'Distanz: ${segmentDistance.toStringAsFixed(2)} sm',
+                                                    style: const TextStyle(fontSize: 12, color: Colors.black87),
+                                                  ),
+                                              ],
+                                            ),
+                                            trailing: IconButton(
+                                              icon: const Icon(Icons.delete, color: Colors.red),
+                                              onPressed: () => _removePoint(index),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                            ),
+                            // --- NEU: Gesamtdistanz unterhalb der Liste ---
+                            if (_points.length > 1)
+                              Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text(
+                                  'Gesamtdistanz: ${totalDistance.toStringAsFixed(2)} sm',
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
                                 ),
                               ),
-                            );
-                          },
+                          ],
                         ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
 
         // untere Hälfte: gespeicherte Routen
         Expanded(
