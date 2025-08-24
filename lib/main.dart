@@ -192,6 +192,15 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       title: const Text('Routenplaner'),
       actions: [
         IconButton(
+          tooltip: 'Neue Route',
+          icon: const Icon(Icons.add), // Icon für neue Route
+          onPressed: () {
+            setState(() {
+              _points.clear(); // Alle Punkte löschen
+            });
+          },
+        ),
+        IconButton(
           icon: const Icon(Icons.save),
           onPressed: _saveRoute,
         ),
