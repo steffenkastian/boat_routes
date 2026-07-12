@@ -37791,7 +37791,7 @@ n=A.HB(new A.xa(new A.akw(l),B.HL,!0,!0,i,A.bN([new A.eT(B.ahH,!1,B.fH,!1,B.KT,B
 m=j.length
 m=A.c([A.HB(m===0?B.HQ:A.atN(new A.aky(l),m),1)],p)
 if(j.length>1)m.push(new A.d6(B.oL,A.fX("Gesamtdistanz: "+B.d.a9(s,2)+" sm",k,k,k,B.jm,k,k),k))
-return new A.zu(new A.vt(B.aqu,o,new A.QX(k,k,1/0,56),k),A.w4(A.c([A.HB(A.apQ(A.c([n,A.HB(A.Xp(k,A.w4(m,B.bD,B.bp,B.fp),B.S,B.Iz,k,k,k,k,k,k,k,k,k),1)],p),B.bD,B.fp),2),A.HB(A.atN(new A.akz(l),l.f.length),1)],p),B.bD,B.bp,B.fp),k)}}
+return new A.zu(new A.vt(B.aqv,o,new A.QX(k,k,1/0,56),k),A.w4(A.c([A.HB(A.apQ(A.c([n,A.HB(A.Xp(k,A.w4(m,B.bD,B.bp,B.fp),B.S,B.Iz,k,k,k,k,k,k,k,k,k),1)],p),B.bD,B.fp),2),A.HB(A.atN(new A.akz(l),l.f.length),1)],p),B.bD,B.bp,B.fp),k)}}
 A.akc.prototype={
 $0(){this.a.d.push(this.b)},
 $S:0}
@@ -37806,7 +37806,7 @@ $0(){return this.a.r=!1},
 $S:0}
 A.ako.prototype={
 $1(a){var s=null,r=this.b
-return new A.qj(B.aqy,new A.Av(r,B.KK,B.amc,B.als,B.alt,!0,s),A.c([A.aq4(B.aqv,new A.akl(a),s),new A.Hr(new A.akm(this.a,r,this.c,a),s,s,s,s,s,s,!1,s,!0,s,B.aqx,s)],t.T),s)},
+return new A.qj(B.aqy,new A.Av(r,B.KK,B.amc,B.als,B.alt,!0,s),A.c([A.aq4(B.aqu,new A.akl(a),s),new A.Hr(new A.akm(this.a,r,this.c,a),s,s,s,s,s,s,!1,s,!0,s,B.aqx,s)],t.T),s)},
 $S:229}
 A.akl.prototype={
 $0(){A.yy(this.a,!1).Hj(null)
@@ -90554,8 +90554,8 @@ B.apj=new A.p(!0,B.I,null,".AppleSystemUIFont",null,null,null,null,null,null,nul
 B.apB=new A.p(!0,B.o,null,".AppleSystemUIFont",null,null,null,null,null,null,null,null,null,null,null,null,null,B.h,null,null,null,"blackRedwoodCity labelMedium",null,null,null,null)
 B.amE=new A.p(!0,B.o,null,".AppleSystemUIFont",null,null,null,null,null,null,null,null,null,null,null,null,null,B.h,null,null,null,"blackRedwoodCity labelSmall",null,null,null,null)
 B.aqt=new A.dB(B.aoi,B.anl,B.aoj,B.aoS,B.an_,B.an6,B.anG,B.aoF,B.anU,B.apn,B.amu,B.amP,B.apj,B.apB,B.amE)
-B.aqu=new A.ja("Routenplaner",null,null,null,null,null,null,null,null)
-B.aqv=new A.ja("Abbrechen",null,null,null,null,null,null,null,null)
+B.aqu=new A.ja("Abbrechen",null,null,null,null,null,null,null,null)
+B.aqv=new A.ja("Routenplaner mit Standort",null,null,null,null,null,null,null,null)
 B.aqx=new A.ja("Speichern",null,null,null,null,null,null,null,null)
 B.aqy=new A.ja("Routenname eingeben",null,null,null,null,null,null,null,null)
 B.atB=new A.adn(0,"system")
