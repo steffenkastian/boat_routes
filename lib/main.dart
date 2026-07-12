@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
 
 void main() {
   runApp(const BoatRoutesApp());
@@ -36,7 +37,8 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   final List<LatLng> _points = [];
   GoogleMapController? _mapController;
   List<Map<String, dynamic>> _savedRoutes = [];
-  bool _addingEnabled = true; // << neu
+  bool _addingEnabled = true; 
+  
 
   static const CameraPosition _initialCamera = CameraPosition(
     target: LatLng(54.382440, 11.145867),
@@ -189,7 +191,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
   return Scaffold(
     appBar: AppBar(
-      title: const Text('Routenplaner'),
+      title: const Text('Routenplaner mit Standort'),
       actions: [
         IconButton(
           tooltip: 'Neue Route',
