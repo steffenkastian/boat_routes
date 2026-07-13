@@ -66,8 +66,17 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     super.dispose();
   }
 
+  // Called both automatically on startup and from a manual tap on the
+  // location button. The manual tap matters on mobile browsers, which
+  // often only show the location permission prompt when triggered
+  // directly from a user gesture — an automatic call on page load can
+  // otherwise hang without ever showing the prompt.
   Future<void> _initLocation() async {
+    await _positionSub?.cancel();
+    setState(() => _positionStreamError = null);
+
     final status = await _locationService.ensurePermission();
+    if (!mounted) return;
     setState(() => _locationStatus = status);
     if (status != LocationAccessStatus.granted) return;
 
@@ -112,7 +121,13 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
   void _jumpToCurrentLocation() {
     final position = _currentPosition;
-    if (position == null) return;
+    if (position == null) {
+      // No fix yet (or permission was never granted) — retry from here,
+      // inside a real user gesture, so the browser reliably shows its
+      // location permission prompt.
+      _initLocation();
+      return;
+    }
     _centerOnPosition(position);
   }
 

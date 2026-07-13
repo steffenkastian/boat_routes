@@ -33,9 +33,11 @@ class RoutePointsPanel extends StatelessWidget {
                       final point = points[index];
 
                       double? segmentDistance;
+                      double? segmentBearing;
                       if (index > 0) {
                         segmentDistance =
                             distanceNm(points[index - 1], point);
+                        segmentBearing = bearing(points[index - 1], point);
                       }
 
                       return Card(
@@ -52,7 +54,7 @@ class RoutePointsPanel extends StatelessWidget {
                               ),
                               if (segmentDistance != null)
                                 Text(
-                                  'Distanz: ${segmentDistance.toStringAsFixed(2)} sm',
+                                  'Kurs: ${segmentBearing!.toStringAsFixed(0)}°  •  Distanz: ${segmentDistance.toStringAsFixed(2)} sm',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     color: Colors.black87,
