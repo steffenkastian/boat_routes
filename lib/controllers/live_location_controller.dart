@@ -31,6 +31,8 @@ class LiveLocationController extends ChangeNotifier {
   BitmapDescriptor? _boatIcon;
   LatLng? _lastFixForHeading;
 
+  Timer? _fixTimeoutTimer;
+
   geo.Position? currentPosition;
   double? displayedHeading;
   LocationAccessStatus? status;
@@ -75,35 +77,72 @@ class LiveLocationController extends ChangeNotifier {
   // often only show the location permission prompt when triggered
   // directly from a user gesture — an automatic call on page load can
   // otherwise hang without ever showing the prompt.
+  //
+  // Both the permission query and the first fix are wrapped with a
+  // timeout/try-catch: some mobile browsers don't support the Permissions
+  // API for geolocation at all, which can leave the underlying call hanging
+  // indefinitely instead of resolving or throwing — without this, that
+  // shows up as "GPS wird gesucht…" forever with no way to tell what went
+  // wrong.
   Future<void> start() async {
     await _positionSub?.cancel();
+    _fixTimeoutTimer?.cancel();
     streamError = null;
     notifyListeners();
 
-    final result = await _locationService.ensurePermission();
+    final LocationAccessStatus result;
+    try {
+      result = await _locationService
+          .ensurePermission()
+          .timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      streamError =
+          'Standortabfrage antwortet nicht – Standortberechtigung für diese Seite in den Browser-Einstellungen prüfen.';
+      notifyListeners();
+      return;
+    } catch (_) {
+      streamError = 'Standortabfrage wird von diesem Browser nicht unterstützt';
+      notifyListeners();
+      return;
+    }
+
     status = result;
     notifyListeners();
     if (result != LocationAccessStatus.granted) return;
 
-    _positionSub = _locationService.positionStream().listen(
-      (position) {
-        final fix = LatLng(position.latitude, position.longitude);
-        currentPosition = position;
-        streamError = null;
-        final lastFix = _lastFixForHeading;
-        if (lastFix != null &&
-            distanceMeters(lastFix, fix) >= _minMovementForHeadingMeters) {
-          displayedHeading = bearing(lastFix, fix);
-        }
-        _lastFixForHeading = fix;
-        if (isRecording) track.add(fix);
+    _fixTimeoutTimer = Timer(const Duration(seconds: 10), () {
+      if (currentPosition == null) {
+        streamError =
+            'Keine GPS-Daten empfangen – Standortdienste am Gerät prüfen.';
         notifyListeners();
-      },
-      onError: (Object error) {
-        streamError = 'Standort nicht verfügbar';
-        notifyListeners();
-      },
-    );
+      }
+    });
+
+    try {
+      _positionSub = _locationService.positionStream().listen(
+        (position) {
+          _fixTimeoutTimer?.cancel();
+          final fix = LatLng(position.latitude, position.longitude);
+          currentPosition = position;
+          streamError = null;
+          final lastFix = _lastFixForHeading;
+          if (lastFix != null &&
+              distanceMeters(lastFix, fix) >= _minMovementForHeadingMeters) {
+            displayedHeading = bearing(lastFix, fix);
+          }
+          _lastFixForHeading = fix;
+          if (isRecording) track.add(fix);
+          notifyListeners();
+        },
+        onError: (Object error) {
+          streamError = 'Standort nicht verfügbar';
+          notifyListeners();
+        },
+      );
+    } catch (_) {
+      streamError = 'Standort-Stream konnte nicht gestartet werden';
+      notifyListeners();
+    }
   }
 
   void startRecording() {
@@ -126,6 +165,7 @@ class LiveLocationController extends ChangeNotifier {
   @override
   void dispose() {
     _positionSub?.cancel();
+    _fixTimeoutTimer?.cancel();
     super.dispose();
   }
 }
