@@ -8,7 +8,8 @@ class RouteMapView extends StatelessWidget {
     required this.addingEnabled,
     required this.onTap,
     required this.onMapCreated,
-    this.boatMarker,
+    this.extraMarkers = const {},
+    this.showPointMarkers = true,
     super.key,
   });
 
@@ -17,23 +18,25 @@ class RouteMapView extends StatelessWidget {
   final bool addingEnabled;
   final ValueChanged<LatLng> onTap;
   final ValueChanged<GoogleMapController> onMapCreated;
-  final Marker? boatMarker;
+  final Set<Marker> extraMarkers;
+  final bool showPointMarkers;
 
   @override
   Widget build(BuildContext context) {
-    final markers = points.asMap().entries.map((entry) {
-      final idx = entry.key;
-      final pos = entry.value;
-      return Marker(
-        markerId: MarkerId('point_$idx'),
-        position: pos,
-        infoWindow: InfoWindow(title: 'Punkt ${idx + 1}'),
-      );
-    }).toSet();
-
-    if (boatMarker != null) {
-      markers.add(boatMarker!);
+    final markers = <Marker>{};
+    if (showPointMarkers) {
+      markers.addAll(points.asMap().entries.map((entry) {
+        final idx = entry.key;
+        final pos = entry.value;
+        return Marker(
+          markerId: MarkerId('point_$idx'),
+          position: pos,
+          infoWindow: InfoWindow(title: 'Punkt ${idx + 1}'),
+        );
+      }));
     }
+
+    markers.addAll(extraMarkers);
 
     final polyline = Polyline(
       polylineId: const PolylineId('route'),

@@ -15,10 +15,7 @@ class RoutePointsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double totalDistance = 0.0;
-    for (var i = 0; i < points.length - 1; i++) {
-      totalDistance += distanceNm(points[i], points[i + 1]);
-    }
+    final totalDistance = totalDistanceNm(points);
 
     return Container(
       color: Colors.grey.shade100,

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/route_planner_screen.dart';
+import 'screens/main_shell.dart';
 
 class BoatRoutesApp extends StatelessWidget {
   const BoatRoutesApp({super.key});
@@ -14,7 +14,7 @@ class BoatRoutesApp extends StatelessWidget {
         colorSchemeSeed: const Color(0xFF0B6EF3),
         useMaterial3: true,
       ),
-      home: const RoutePlannerScreen(),
+      home: const MainShell(),
     );
   }
 }

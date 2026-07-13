@@ -20,6 +20,14 @@ double distanceNm(LatLng p1, LatLng p2) {
 
 double distanceMeters(LatLng p1, LatLng p2) => distanceNm(p1, p2) * 1852;
 
+double totalDistanceNm(List<LatLng> points) {
+  var total = 0.0;
+  for (var i = 0; i < points.length - 1; i++) {
+    total += distanceNm(points[i], points[i + 1]);
+  }
+  return total;
+}
+
 double metersPerSecondToKnots(double mps) => mps * 1.94384;
 
 // True course over ground, computed from two consecutive GPS fixes rather

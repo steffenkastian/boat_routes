@@ -1,18 +1,16 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart' as geo;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../controllers/live_location_controller.dart';
 import '../models/boat_route.dart';
 import '../services/location_service.dart';
 import '../services/route_storage_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/marker_icon_factory.dart';
 import '../widgets/hud_overlay.dart';
+import '../widgets/prompt_name_dialog.dart';
 import '../widgets/route_map_view.dart';
 import '../widgets/route_points_panel.dart';
-import '../widgets/save_route_dialog.dart';
 import '../widgets/saved_routes_panel.dart';
 
 class RoutePlannerScreen extends StatefulWidget {
@@ -29,89 +27,47 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   );
 
   final _routeStorage = RouteStorageService();
-  final _locationService = LocationService();
+  final _location = LiveLocationController(LocationService());
 
   final List<LatLng> _points = [];
   GoogleMapController? _mapController;
   List<BoatRoute> _savedRoutes = [];
   bool _addingEnabled = true;
-
-  StreamSubscription<geo.Position>? _positionSub;
-  geo.Position? _currentPosition;
-  LatLng? _lastFixForHeading;
-  double? _displayedHeading;
-  BitmapDescriptor? _boatIcon;
-  LocationAccessStatus? _locationStatus;
-  String? _positionStreamError;
   bool _hasAutoCenteredOnLocation = false;
+  bool _hudTapGuard = false;
 
-  // Minimum movement between fixes before we trust a newly computed course
-  // over ground — GPS jitter while stationary would otherwise show a
-  // constantly flickering heading.
-  static const _minMovementForHeadingMeters = 3.0;
+  final Map<String, BitmapDescriptor> _courseLabelIcons = {};
 
   @override
   void initState() {
     super.initState();
     _loadRoutes();
-    _initLocation();
-    buildBoatArrowIcon().then((icon) {
-      if (mounted) setState(() => _boatIcon = icon);
-    });
+    _location.addListener(_onLocationChanged);
+    _location.start();
   }
 
   @override
   void dispose() {
-    _positionSub?.cancel();
+    _location.removeListener(_onLocationChanged);
+    _location.dispose();
     super.dispose();
   }
 
-  // Called both automatically on startup and from a manual tap on the
-  // location button. The manual tap matters on mobile browsers, which
-  // often only show the location permission prompt when triggered
-  // directly from a user gesture — an automatic call on page load can
-  // otherwise hang without ever showing the prompt.
-  Future<void> _initLocation() async {
-    await _positionSub?.cancel();
-    setState(() => _positionStreamError = null);
-
-    final status = await _locationService.ensurePermission();
-    if (!mounted) return;
-    setState(() => _locationStatus = status);
-    if (status != LocationAccessStatus.granted) return;
-
-    _positionSub = _locationService.positionStream().listen(
-      (position) {
-        final fix = LatLng(position.latitude, position.longitude);
-        setState(() {
-          _currentPosition = position;
-          _positionStreamError = null;
-          final lastFix = _lastFixForHeading;
-          if (lastFix != null &&
-              distanceMeters(lastFix, fix) >= _minMovementForHeadingMeters) {
-            _displayedHeading = bearing(lastFix, fix);
-          }
-          _lastFixForHeading = fix;
-        });
-        if (!_hasAutoCenteredOnLocation) {
-          _centerOnPosition(position, animate: false);
-        }
-      },
-      onError: (Object error) {
-        setState(() => _positionStreamError = 'Standort nicht verfügbar');
-      },
-    );
+  void _onLocationChanged() {
+    if (!_hasAutoCenteredOnLocation && _location.currentPosition != null) {
+      _centerOnPosition(_location.currentPosition!.latitude,
+          _location.currentPosition!.longitude,
+          animate: false);
+    }
+    setState(() {});
   }
 
-  void _centerOnPosition(geo.Position position, {bool animate = true}) {
+  void _centerOnPosition(double lat, double lng, {bool animate = true}) {
     final controller = _mapController;
     if (controller == null) return;
 
     _hasAutoCenteredOnLocation = true;
-    final target = CameraPosition(
-      target: LatLng(position.latitude, position.longitude),
-      zoom: 15,
-    );
+    final target = CameraPosition(target: LatLng(lat, lng), zoom: 15);
     if (animate) {
       controller.animateCamera(CameraUpdate.newCameraPosition(target));
     } else {
@@ -120,27 +76,81 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   }
 
   void _jumpToCurrentLocation() {
-    final position = _currentPosition;
+    // On Flutter web the GoogleMap platform view can receive a tap directly
+    // (it isn't routed through Flutter's own widget hit-testing), so a tap
+    // meant for the HUD button can also reach the map underneath and add a
+    // route point. Guard the next map tap for a brief window rather than
+    // trying to geometrically detect the overlap, which proved unreliable.
+    _hudTapGuard = true;
+    Future.delayed(const Duration(milliseconds: 400), () {
+      _hudTapGuard = false;
+    });
+
+    final position = _location.currentPosition;
     if (position == null) {
       // No fix yet (or permission was never granted) — retry from here,
       // inside a real user gesture, so the browser reliably shows its
       // location permission prompt.
-      _initLocation();
+      _location.start();
       return;
     }
-    _centerOnPosition(position);
+    _centerOnPosition(position.latitude, position.longitude);
   }
 
   void _addPoint(LatLng position) {
+    if (_hudTapGuard) return;
     setState(() {
       _points.add(position);
     });
+    _ensureCourseLabelIcons();
   }
 
   void _removePoint(int index) {
     setState(() {
       _points.removeAt(index);
     });
+    _ensureCourseLabelIcons();
+  }
+
+  // Route segment course labels ("123°") are drawn as map markers, which on
+  // google_maps_flutter requires baking each distinct label into a bitmap
+  // ahead of time. Generated lazily and cached by text so repeated courses
+  // (e.g. a beat back and forth) reuse the same icon.
+  Future<void> _ensureCourseLabelIcons() async {
+    final needed = <String>{
+      for (var i = 1; i < _points.length; i++)
+        '${bearing(_points[i - 1], _points[i]).round()}°',
+    };
+    final missing = needed.difference(_courseLabelIcons.keys.toSet());
+    if (missing.isEmpty) return;
+
+    for (final text in missing) {
+      _courseLabelIcons[text] = await buildLabelIcon(text);
+    }
+    if (mounted) setState(() {});
+  }
+
+  Set<Marker> _buildCourseLabelMarkers() {
+    final markers = <Marker>{};
+    for (var i = 1; i < _points.length; i++) {
+      final from = _points[i - 1];
+      final to = _points[i];
+      final text = '${bearing(from, to).round()}°';
+      final icon = _courseLabelIcons[text];
+      if (icon == null) continue;
+
+      markers.add(Marker(
+        markerId: MarkerId('course_$i'),
+        position: LatLng(
+          (from.latitude + to.latitude) / 2,
+          (from.longitude + to.longitude) / 2,
+        ),
+        icon: icon,
+        anchor: const Offset(0.5, 0.5),
+        consumeTapEvents: true,
+      ));
+    }
+    return markers;
   }
 
   Future<void> _loadRoutes() async {
@@ -156,6 +166,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         ..clear()
         ..addAll(route.points);
     });
+    _ensureCourseLabelIcons();
   }
 
   Future<void> _deleteRoute(int index) async {
@@ -169,7 +180,11 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     if (_points.isEmpty) return;
 
     setState(() => _addingEnabled = false);
-    final name = await promptForRouteName(context);
+    final name = await promptForName(
+      context,
+      title: 'Routenname eingeben',
+      hint: 'z.B. Ostseetörn',
+    );
     setState(() => _addingEnabled = true);
 
     if (name == null) return;
@@ -181,42 +196,8 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     });
   }
 
-  String? _locationStatusMessage() {
-    if (_currentPosition == null && _positionStreamError != null) {
-      return _positionStreamError;
-    }
-    switch (_locationStatus) {
-      case null:
-      case LocationAccessStatus.granted:
-        return _currentPosition == null ? 'GPS wird gesucht…' : null;
-      case LocationAccessStatus.serviceDisabled:
-        return 'Standortdienste sind deaktiviert';
-      case LocationAccessStatus.permissionDenied:
-      case LocationAccessStatus.permissionDeniedForever:
-        return 'Standortzugriff verweigert';
-    }
-  }
-
-  Marker? _buildBoatMarker() {
-    final position = _currentPosition;
-    if (position == null || _boatIcon == null) return null;
-
-    return Marker(
-      markerId: const MarkerId('boat'),
-      position: LatLng(position.latitude, position.longitude),
-      icon: _boatIcon!,
-      rotation: _displayedHeading ?? 0,
-      anchor: const Offset(0.5, 0.5),
-      flat: false,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final speedKnots = _currentPosition != null
-        ? metersPerSecondToKnots(_currentPosition!.speed)
-        : null;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Routenplaner mit Standort'),
@@ -253,18 +234,25 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                         onTap: _addPoint,
                         onMapCreated: (controller) {
                           _mapController = controller;
-                          final position = _currentPosition;
+                          final position = _location.currentPosition;
                           if (position != null && !_hasAutoCenteredOnLocation) {
-                            _centerOnPosition(position, animate: false);
+                            _centerOnPosition(
+                              position.latitude,
+                              position.longitude,
+                              animate: false,
+                            );
                           }
                         },
-                        boatMarker: _buildBoatMarker(),
+                        extraMarkers: {
+                          ..._buildCourseLabelMarkers(),
+                          if (_location.boatMarker case final marker?) marker,
+                        },
                       ),
                       HudOverlay(
-                        speedKnots: speedKnots,
-                        headingDegrees: _displayedHeading,
-                        statusMessage: _locationStatusMessage(),
-                        onJumpToLocation: _jumpToCurrentLocation,
+                        speedKnots: _location.speedKnots,
+                        headingDegrees: _location.displayedHeading,
+                        statusMessage: _location.statusMessage,
+                        onTap: _jumpToCurrentLocation,
                       ),
                     ],
                   ),

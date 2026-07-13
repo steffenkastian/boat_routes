@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 
-Future<String?> promptForRouteName(BuildContext context) async {
+Future<String?> promptForName(
+  BuildContext context, {
+  required String title,
+  String hint = '',
+}) async {
   final nameController = TextEditingController();
 
   final saved = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('Routenname eingeben'),
+      title: Text(title),
       content: TextField(
         controller: nameController,
-        decoration: const InputDecoration(hintText: 'z.B. Ostseetörn'),
+        decoration: InputDecoration(hintText: hint),
       ),
       actions: [
         TextButton(
