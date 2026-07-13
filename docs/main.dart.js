@@ -38813,14 +38813,14 @@ r=p.c
 r.toString
 q=p.r
 return A.ash(1,B.A3,o,!1,!1,!1,r,B.pB,B.ago,o,o,o,o,s,q==null?0:q,!0,0)},
-hg(){var s=0,r=A.J(t.H),q,p=2,o=[],n=this,m,l,k,j
+hg(){var s=0,r=A.J(t.H),q,p=2,o=[],n=this,m,l,k,j,i
 var $async$hg=A.K(function(a,b){if(a===1){o.push(b)
-s=p}while(true)switch(s){case 0:k=n.b
-k=k==null?null:k.aH()
+s=p}while(true)switch(s){case 0:j=n.b
+j=j==null?null:j.aH()
 s=3
-return A.P(t.uz.b(k)?k:A.iz(k,t.H),$async$hg)
-case 3:k=n.e
-if(k!=null)k.aH()
+return A.P(t.uz.b(j)?j:A.iz(j,t.H),$async$hg)
+case 3:j=n.e
+if(j!=null)j.aH()
 n.x=null
 n.ar()
 m=null
@@ -38832,11 +38832,13 @@ p=2
 s=7
 break
 case 5:p=4
-j=o.pop()
-if(A.an(j) instanceof A.Bt){n.x="Standortabfrage antwortet nicht \u2013 Standortberechtigung f\xfcr diese Seite in den Browser-Einstellungen pr\xfcfen."
+i=o.pop()
+j=A.an(i)
+if(j instanceof A.Bt){n.x="Standortabfrage antwortet nicht \u2013 Standortberechtigung f\xfcr diese Seite in den Browser-Einstellungen pr\xfcfen."
 n.ar()
 s=1
-break}else{n.x="Standortabfrage wird von diesem Browser nicht unterst\xfctzt"
+break}else{l=j
+n.x="Standortfehler: "+A.n(l)
 n.ar()
 s=1
 break}s=7
@@ -38847,7 +38849,7 @@ case 7:n.w=m
 n.ar()
 if(m!==B.lh){s=1
 break}n.e=A.ca(B.oW,new A.a4l(n))
-try{n.b=$.WE().XD(B.HD).anQ(new A.a4m(n),new A.a4n(n))}catch(i){n.x="Standort-Stream konnte nicht gestartet werden"
+try{n.b=$.WE().XD(B.HD).anQ(new A.a4m(n),new A.a4n(n))}catch(h){n.x="Standort-Stream konnte nicht gestartet werden"
 n.ar()}case 1:return A.H(q,r)
 case 2:return A.G(o.at(-1),r)}})
 return A.I($async$hg,r)},

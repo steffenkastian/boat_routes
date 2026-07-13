@@ -100,8 +100,10 @@ class LiveLocationController extends ChangeNotifier {
           'Standortabfrage antwortet nicht – Standortberechtigung für diese Seite in den Browser-Einstellungen prüfen.';
       notifyListeners();
       return;
-    } catch (_) {
-      streamError = 'Standortabfrage wird von diesem Browser nicht unterstützt';
+    } catch (e) {
+      // Temporarily surfacing the raw error text (instead of a generic
+      // message) to diagnose an unexpected failure on some mobile browsers.
+      streamError = 'Standortfehler: $e';
       notifyListeners();
       return;
     }
