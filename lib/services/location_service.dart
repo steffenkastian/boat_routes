@@ -13,7 +13,18 @@ class LocationService {
       return LocationAccessStatus.serviceDisabled;
     }
 
-    var permission = await Geolocator.checkPermission();
+    LocationPermission permission;
+    try {
+      permission = await Geolocator.checkPermission();
+    } catch (_) {
+      // Some mobile browsers don't reliably support the Permissions API
+      // query for geolocation and throw here instead of returning a status.
+      // Treat that the same as "unknown" and fall through to requesting
+      // directly, which triggers the browser's native prompt via
+      // getCurrentPosition instead of relying on the Permissions API.
+      permission = LocationPermission.denied;
+    }
+
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
