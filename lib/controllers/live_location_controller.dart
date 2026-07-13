@@ -106,7 +106,11 @@ class LiveLocationController extends ChangeNotifier {
       // yet on a cold start — retry once after a short delay instead of
       // surfacing a permanent-looking error immediately.
       if (isRetry) {
-        streamError = 'Standort-Plugin konnte nicht geladen werden';
+        // Temporary diagnostic: reveal which GeolocatorPlatform
+        // implementation is actually active, to see whether the web
+        // implementation ever got registered at all.
+        streamError =
+            'Standort-Plugin konnte nicht geladen werden (aktiv: ${geo.GeolocatorPlatform.instance.runtimeType})';
         notifyListeners();
         return;
       }
