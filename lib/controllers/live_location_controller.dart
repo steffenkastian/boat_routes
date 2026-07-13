@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
@@ -84,7 +85,7 @@ class LiveLocationController extends ChangeNotifier {
   // indefinitely instead of resolving or throwing — without this, that
   // shows up as "GPS wird gesucht…" forever with no way to tell what went
   // wrong.
-  Future<void> start() async {
+  Future<void> start({bool isRetry = false}) async {
     await _positionSub?.cancel();
     _fixTimeoutTimer?.cancel();
     streamError = null;
@@ -100,6 +101,17 @@ class LiveLocationController extends ChangeNotifier {
           'Standortabfrage antwortet nicht – Standortberechtigung für diese Seite in den Browser-Einstellungen prüfen.';
       notifyListeners();
       return;
+    } on MissingPluginException {
+      // The web plugin implementation can occasionally not be registered
+      // yet on a cold start — retry once after a short delay instead of
+      // surfacing a permanent-looking error immediately.
+      if (isRetry) {
+        streamError = 'Standort-Plugin konnte nicht geladen werden';
+        notifyListeners();
+        return;
+      }
+      await Future.delayed(const Duration(milliseconds: 800));
+      return start(isRetry: true);
     } catch (e) {
       // Temporarily surfacing the raw error text (instead of a generic
       // message) to diagnose an unexpected failure on some mobile browsers.
