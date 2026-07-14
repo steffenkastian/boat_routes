@@ -351,8 +351,29 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
-          // Narrow (phone) screens stack everything vertically — a
-          // side-by-side points panel would be squeezed to a sliver too
+          // A short viewport (phone in landscape — plenty of width but very
+          // little height) needs a different split than a narrow portrait
+          // phone: checked first since a landscape phone can easily be
+          // wider than the portrait breakpoint below.
+          if (constraints.maxHeight < 500) {
+            return Row(
+              children: [
+                Expanded(flex: 5, child: mapAndHud),
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    children: [
+                      Expanded(flex: 5, child: pointsPanel),
+                      Expanded(flex: 1, child: savedPanel),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          }
+
+          // Narrow (portrait phone) screens stack everything vertically —
+          // a side-by-side points panel would be squeezed to a sliver too
           // narrow for its coordinate-entry row and drag handles.
           if (constraints.maxWidth < 700) {
             // Saved routes is just a browse/load list, often empty or short
