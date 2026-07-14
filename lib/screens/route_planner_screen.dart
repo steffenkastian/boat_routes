@@ -262,6 +262,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                   child: RoutePointsPanel(
                     points: _points,
                     onRemovePoint: _removePoint,
+                    onAddPoint: _addPoint,
                   ),
                 ),
               ],
