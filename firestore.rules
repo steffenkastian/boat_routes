@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // No auth system yet, so anyone using the app can publish a regatta.
+    // Reads are open (needed for the PLZ search), creates are open, but
+    // updates/deletes are blocked so an existing entry can't be vandalized
+    // or overwritten by someone else.
+    match /regattas/{regattaId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
