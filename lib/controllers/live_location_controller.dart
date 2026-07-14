@@ -15,10 +15,7 @@ import '../utils/marker_icon_factory.dart';
 // Optionally records every fix into `track` for tour logging.
 class LiveLocationController extends ChangeNotifier {
   LiveLocationController(this._locationService) {
-    buildBoatArrowIcon().then((icon) {
-      _boatIcon = icon;
-      notifyListeners();
-    });
+    _ensureBoatIcon(0); // pre-warm north, the default heading
   }
 
   final LocationService _locationService;
@@ -29,7 +26,13 @@ class LiveLocationController extends ChangeNotifier {
   static const _minMovementForHeadingMeters = 3.0;
 
   StreamSubscription<geo.Position>? _positionSub;
-  BitmapDescriptor? _boatIcon;
+  // google_maps_flutter_web's Marker.rotation is silently ignored for
+  // raster icons (only vector Symbol icons rotate on the classic
+  // google.maps.Marker it wraps) — the heading has to be baked into the
+  // bitmap itself. Cached per 15°-rounded bucket rather than per exact
+  // degree, so this stays a handful of icons instead of one per fix.
+  final Map<int, BitmapDescriptor> _boatIconsByHeading = {};
+  final Set<int> _pendingBoatIconBuckets = {};
   LatLng? _lastFixForHeading;
 
   Timer? _fixTimeoutTimer;
@@ -59,15 +62,38 @@ class LiveLocationController extends ChangeNotifier {
     }
   }
 
+  int _headingBucket(double degrees) {
+    final normalized = ((degrees % 360) + 360) % 360;
+    return ((normalized / 15).round() * 15) % 360;
+  }
+
+  Future<void> _ensureBoatIcon(int bucket) async {
+    if (_boatIconsByHeading.containsKey(bucket) ||
+        _pendingBoatIconBuckets.contains(bucket)) {
+      return;
+    }
+    _pendingBoatIconBuckets.add(bucket);
+    final icon = await buildBoatArrowIcon(rotationDegrees: bucket.toDouble());
+    _boatIconsByHeading[bucket] = icon;
+    _pendingBoatIconBuckets.remove(bucket);
+    notifyListeners();
+  }
+
   Marker? get boatMarker {
     final position = currentPosition;
-    if (position == null || _boatIcon == null) return null;
+    if (position == null) return null;
+
+    final bucket = _headingBucket(displayedHeading ?? 0);
+    final icon = _boatIconsByHeading[bucket];
+    if (icon == null) {
+      _ensureBoatIcon(bucket);
+      return null;
+    }
 
     return Marker(
       markerId: const MarkerId('boat'),
       position: LatLng(position.latitude, position.longitude),
-      icon: _boatIcon!,
-      rotation: displayedHeading ?? 0,
+      icon: icon,
       anchor: const Offset(0.5, 0.5),
       flat: false,
     );

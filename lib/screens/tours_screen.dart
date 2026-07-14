@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../controllers/auth_controller.dart';
 import '../controllers/live_location_controller.dart';
+import '../controllers/route_annotations_controller.dart';
 import '../models/regatta.dart';
 import '../models/tour.dart';
 import '../services/auth_service.dart';
@@ -36,6 +37,7 @@ class _ToursScreenState extends State<ToursScreen> {
   final _regattaStorage = RegattaStorageService();
   final _location = LiveLocationController(LocationService());
   final _auth = AuthController(AuthService());
+  final _referenceAnnotations = RouteAnnotationsController();
 
   GoogleMapController? _mapController;
   List<Tour> _savedTours = [];
@@ -48,6 +50,16 @@ class _ToursScreenState extends State<ToursScreen> {
     _loadTours();
     _location.addListener(_onLocationChanged);
     _auth.addListener(_onAuthChanged);
+    _referenceAnnotations.addListener(_onAnnotationsChanged);
+    _referenceAnnotations.ensureIconsFor(widget.referenceRoute ?? const []);
+  }
+
+  @override
+  void didUpdateWidget(covariant ToursScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.referenceRoute != oldWidget.referenceRoute) {
+      _referenceAnnotations.ensureIconsFor(widget.referenceRoute ?? const []);
+    }
   }
 
   @override
@@ -56,11 +68,14 @@ class _ToursScreenState extends State<ToursScreen> {
     _location.dispose();
     _auth.removeListener(_onAuthChanged);
     _auth.dispose();
+    _referenceAnnotations.removeListener(_onAnnotationsChanged);
+    _referenceAnnotations.dispose();
     super.dispose();
   }
 
   void _onLocationChanged() => setState(() {});
   void _onAuthChanged() => setState(() {});
+  void _onAnnotationsChanged() => setState(() {});
 
   Future<void> _loadTours() async {
     final tours = await _tourStorage.loadTours();
@@ -133,6 +148,10 @@ class _ToursScreenState extends State<ToursScreen> {
               onMapCreated: (controller) => _mapController = controller,
               extraMarkers: {
                 if (_location.boatMarker case final marker?) marker,
+                ..._referenceAnnotations.buildMarkers(
+                  widget.referenceRoute ?? const [],
+                  idPrefix: 'reference',
+                ),
               },
               referenceRoute: widget.referenceRoute,
             ),

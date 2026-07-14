@@ -4,17 +4,28 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 // Draws a boat-heading arrow pointing "up" (north) and bakes it into a
-// BitmapDescriptor. Rotation to match actual heading is done via the
-// Marker's own `rotation` field, not by re-drawing this bitmap.
+// BitmapDescriptor. The rotation is baked directly into the bitmap (not left
+// to the Marker's own `rotation` field): google_maps_flutter_web still uses
+// the classic google.maps.Marker, whose `rotation` only applies to vector
+// Symbol icons, not raster image icons like ours — on web it's silently
+// ignored, so a raster arrow marker never actually turns. Callers needing a
+// range of headings should round to a coarse bucket (e.g. nearest 15°) and
+// cache one baked bitmap per bucket rather than generating one per exact
+// degree.
 Future<BitmapDescriptor> buildBoatArrowIcon({
   double size = 64,
   Color color = Colors.blueAccent,
   Color borderColor = Colors.white,
+  double rotationDegrees = 0,
 }) async {
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, size, size));
 
   final center = size / 2;
+  canvas.translate(center, center);
+  canvas.rotate(rotationDegrees * 3.1415926535897932 / 180);
+  canvas.translate(-center, -center);
+
   final path = Path()
     ..moveTo(center, size * 0.05) // tip
     ..lineTo(size * 0.85, size * 0.85) // right base
