@@ -15,6 +15,7 @@ class RouteMapView extends StatelessWidget {
     this.showSeaMarks = false,
     this.showDepth = false,
     this.pointIcons = const {},
+    this.referenceRoute,
     super.key,
   });
 
@@ -30,6 +31,9 @@ class RouteMapView extends StatelessWidget {
   // Keyed by 1-based point number, falls back to the default red pin while
   // the numbered icon hasn't finished generating yet.
   final Map<int, BitmapDescriptor> pointIcons;
+  // An optional planned/regatta course drawn distinctly from `points`
+  // (which represents the tapped waypoints or the live GPS track).
+  final List<LatLng>? referenceRoute;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +62,18 @@ class RouteMapView extends StatelessWidget {
       points: points,
     );
 
+    final polylines = {polyline};
+    final reference = referenceRoute;
+    if (reference != null && reference.isNotEmpty) {
+      polylines.add(Polyline(
+        polylineId: const PolylineId('reference_route'),
+        color: Colors.orange,
+        width: 4,
+        patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+        points: reference,
+      ));
+    }
+
     return GoogleMap(
       initialCameraPosition: initialCamera,
       onMapCreated: onMapCreated,
@@ -65,7 +81,7 @@ class RouteMapView extends StatelessWidget {
         if (addingEnabled) onTap(pos);
       },
       markers: markers,
-      polylines: {polyline},
+      polylines: polylines,
       tileOverlays: {
         if (showDepth) openSeaMapDepthOverlay,
         if (showSeaMarks) openSeaMapOverlay,

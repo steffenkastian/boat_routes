@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../controllers/auth_controller.dart';
 import '../controllers/live_location_controller.dart';
 import '../models/boat_route.dart';
+import '../models/regatta.dart';
+import '../services/auth_service.dart';
 import '../services/location_service.dart';
+import '../services/regatta_storage_service.dart';
 import '../services/route_storage_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/marker_icon_factory.dart';
 import '../widgets/hud_overlay.dart';
-import '../widgets/prompt_name_dialog.dart';
 import '../widgets/route_map_view.dart';
 import '../widgets/route_points_panel.dart';
+import '../widgets/save_options_dialog.dart';
 import '../widgets/saved_routes_panel.dart';
 
 class RoutePlannerScreen extends StatefulWidget {
@@ -27,7 +31,9 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   );
 
   final _routeStorage = RouteStorageService();
+  final _regattaStorage = RegattaStorageService();
   final _location = LiveLocationController(LocationService());
+  final _auth = AuthController(AuthService());
 
   final List<LatLng> _points = [];
   GoogleMapController? _mapController;
@@ -47,14 +53,19 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     _loadRoutes();
     _location.addListener(_onLocationChanged);
     _location.start();
+    _auth.addListener(_onAuthChanged);
   }
 
   @override
   void dispose() {
     _location.removeListener(_onLocationChanged);
     _location.dispose();
+    _auth.removeListener(_onAuthChanged);
+    _auth.dispose();
     super.dispose();
   }
+
+  void _onAuthChanged() => setState(() {});
 
   void _onLocationChanged() {
     if (!_hasAutoCenteredOnLocation && _location.currentPosition != null) {
@@ -251,20 +262,31 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     if (_points.isEmpty) return;
 
     setState(() => _addingEnabled = false);
-    final name = await promptForName(
+    final options = await promptForSaveOptions(
       context,
       title: 'Routenname eingeben',
       hint: 'z.B. Ostseetörn',
+      canPublishAsRegatta: _auth.isAdmin,
     );
     setState(() => _addingEnabled = true);
 
-    if (name == null) return;
+    if (options == null) return;
 
-    final newRoute = BoatRoute(name: name, points: List.of(_points));
+    final points = List.of(_points);
+    final newRoute = BoatRoute(name: options.name, points: points);
     await _routeStorage.addRoute(newRoute);
     setState(() {
       _savedRoutes.add(newRoute);
     });
+
+    if (options.publishAsRegatta) {
+      await _regattaStorage.addRegatta(Regatta(
+        name: options.name,
+        plz: options.plz!,
+        points: points,
+        createdAt: DateTime.now(),
+      ));
+    }
   }
 
   @override
