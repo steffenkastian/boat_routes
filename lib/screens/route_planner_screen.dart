@@ -18,7 +18,9 @@ import '../widgets/save_options_dialog.dart';
 import '../widgets/saved_routes_panel.dart';
 
 class RoutePlannerScreen extends StatefulWidget {
-  const RoutePlannerScreen({super.key});
+  const RoutePlannerScreen({required this.onStartTour, super.key});
+
+  final ValueChanged<List<LatLng>> onStartTour;
 
   @override
   State<RoutePlannerScreen> createState() => _RoutePlannerScreenState();
@@ -291,6 +293,54 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final mapAndHud = Stack(
+      children: [
+        RouteMapView(
+          initialCamera: _initialCamera,
+          points: _points,
+          addingEnabled: _addingEnabled,
+          onTap: _addPoint,
+          onMapCreated: (controller) {
+            _mapController = controller;
+            final position = _location.currentPosition;
+            if (position != null && !_hasAutoCenteredOnLocation) {
+              _centerOnPosition(
+                position.latitude,
+                position.longitude,
+                animate: false,
+              );
+            }
+          },
+          extraMarkers: {
+            ..._buildCourseLabelMarkers(),
+            if (_location.boatMarker case final marker?) marker,
+          },
+          showSeaMarks: _showSeaMarks,
+          showDepth: _showDepth,
+          pointIcons: _pointNumberIcons,
+        ),
+        HudOverlay(
+          speedKnots: _location.speedKnots,
+          headingDegrees: _location.displayedHeading,
+          statusMessage: _location.statusMessage,
+          onTap: _jumpToCurrentLocation,
+        ),
+      ],
+    );
+
+    final pointsPanel = RoutePointsPanel(
+      points: _points,
+      onRemovePoint: _removePoint,
+      onAddPoint: _addPoint,
+      onReorderPoints: _reorderPoints,
+    );
+
+    final savedPanel = SavedRoutesPanel(
+      routes: _savedRoutes,
+      onLoad: _loadRoute,
+      onDelete: _deleteRoute,
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Routenplaner mit Standort'),
@@ -299,6 +349,13 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
             tooltip: 'Kartenebenen',
             icon: const Icon(Icons.layers),
             onPressed: _showLayersMenu,
+          ),
+          IconButton(
+            tooltip: 'Törn starten',
+            icon: const Icon(Icons.play_circle_outline),
+            onPressed: _points.isEmpty
+                ? null
+                : () => widget.onStartTour(List.of(_points)),
           ),
           IconButton(
             tooltip: 'Neue Route',
@@ -315,70 +372,36 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            flex: 2,
-            child: Row(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // Narrow (phone) screens stack everything vertically — a
+          // side-by-side points panel would be squeezed to a sliver too
+          // narrow for its coordinate-entry row and drag handles.
+          if (constraints.maxWidth < 700) {
+            return Column(
               children: [
-                Expanded(
-                  flex: 3,
-                  child: Stack(
-                    children: [
-                      RouteMapView(
-                        initialCamera: _initialCamera,
-                        points: _points,
-                        addingEnabled: _addingEnabled,
-                        onTap: _addPoint,
-                        onMapCreated: (controller) {
-                          _mapController = controller;
-                          final position = _location.currentPosition;
-                          if (position != null && !_hasAutoCenteredOnLocation) {
-                            _centerOnPosition(
-                              position.latitude,
-                              position.longitude,
-                              animate: false,
-                            );
-                          }
-                        },
-                        extraMarkers: {
-                          ..._buildCourseLabelMarkers(),
-                          if (_location.boatMarker case final marker?) marker,
-                        },
-                        showSeaMarks: _showSeaMarks,
-                        showDepth: _showDepth,
-                        pointIcons: _pointNumberIcons,
-                      ),
-                      HudOverlay(
-                        speedKnots: _location.speedKnots,
-                        headingDegrees: _location.displayedHeading,
-                        statusMessage: _location.statusMessage,
-                        onTap: _jumpToCurrentLocation,
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: RoutePointsPanel(
-                    points: _points,
-                    onRemovePoint: _removePoint,
-                    onAddPoint: _addPoint,
-                    onReorderPoints: _reorderPoints,
-                  ),
-                ),
+                Expanded(flex: 5, child: mapAndHud),
+                Expanded(flex: 4, child: pointsPanel),
+                Expanded(flex: 3, child: savedPanel),
               ],
-            ),
-          ),
-          Expanded(
-            flex: 1,
-            child: SavedRoutesPanel(
-              routes: _savedRoutes,
-              onLoad: _loadRoute,
-              onDelete: _deleteRoute,
-            ),
-          ),
-        ],
+            );
+          }
+
+          return Column(
+            children: [
+              Expanded(
+                flex: 2,
+                child: Row(
+                  children: [
+                    Expanded(flex: 3, child: mapAndHud),
+                    Expanded(flex: 1, child: pointsPanel),
+                  ],
+                ),
+              ),
+              Expanded(flex: 1, child: savedPanel),
+            ],
+          );
+        },
       ),
     );
   }

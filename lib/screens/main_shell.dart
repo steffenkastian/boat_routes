@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/regatta.dart';
 import 'profile_screen.dart';
@@ -21,11 +22,21 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
-  Regatta? _selectedRegatta;
+  List<LatLng>? _referenceRoute;
+  String? _referenceRouteLabel;
 
   void _onRegattaSelected(Regatta regatta) {
     setState(() {
-      _selectedRegatta = regatta;
+      _referenceRoute = regatta.points;
+      _referenceRouteLabel = regatta.name;
+      _selectedIndex = 2;
+    });
+  }
+
+  void _onStartTour(List<LatLng> points) {
+    setState(() {
+      _referenceRoute = points;
+      _referenceRouteLabel = null;
       _selectedIndex = 2;
     });
   }
@@ -33,9 +44,12 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      const RoutePlannerScreen(),
+      RoutePlannerScreen(onStartTour: _onStartTour),
       RegattaScreen(onRegattaSelected: _onRegattaSelected),
-      ToursScreen(regatta: _selectedRegatta),
+      ToursScreen(
+        referenceRoute: _referenceRoute,
+        referenceRouteLabel: _referenceRouteLabel,
+      ),
       const ProfileScreen(),
     ];
 

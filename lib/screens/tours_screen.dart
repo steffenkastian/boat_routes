@@ -15,9 +15,12 @@ import '../widgets/route_map_view.dart';
 import '../widgets/save_options_dialog.dart';
 
 class ToursScreen extends StatefulWidget {
-  const ToursScreen({this.regatta, super.key});
+  const ToursScreen({this.referenceRoute, this.referenceRouteLabel, super.key});
 
-  final Regatta? regatta;
+  // Points to show as a reference course while tracking — either a loaded
+  // regatta or the currently drawn route from "Route planen".
+  final List<LatLng>? referenceRoute;
+  final String? referenceRouteLabel;
 
   @override
   State<ToursScreen> createState() => _ToursScreenState();
@@ -131,7 +134,7 @@ class _ToursScreenState extends State<ToursScreen> {
               extraMarkers: {
                 if (_location.boatMarker case final marker?) marker,
               },
-              referenceRoute: widget.regatta?.points,
+              referenceRoute: widget.referenceRoute,
             ),
             HudOverlay(
               speedKnots: _location.speedKnots,
@@ -173,11 +176,15 @@ class _ToursScreenState extends State<ToursScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            if (widget.regatta != null)
+            if (widget.referenceRoute != null)
               Card(
                 child: ListTile(
                   leading: const Icon(Icons.flag),
-                  title: Text('Regatta geladen: ${widget.regatta!.name}'),
+                  title: Text(
+                    widget.referenceRouteLabel != null
+                        ? 'Geladen: ${widget.referenceRouteLabel}'
+                        : 'Route geladen',
+                  ),
                 ),
               ),
             SizedBox(
