@@ -12,6 +12,7 @@ import '../services/regatta_storage_service.dart';
 import '../services/tour_storage_service.dart';
 import '../utils/geo_utils.dart';
 import '../widgets/hud_overlay.dart';
+import '../widgets/map_layers_menu.dart';
 import '../widgets/route_map_view.dart';
 import '../widgets/save_options_dialog.dart';
 
@@ -43,6 +44,8 @@ class _ToursScreenState extends State<ToursScreen> {
   List<Tour> _savedTours = [];
   bool _isTracking = false;
   DateTime? _startedAt;
+  bool _showSeaMarks = false;
+  bool _showDepth = false;
 
   @override
   void initState() {
@@ -136,7 +139,23 @@ class _ToursScreenState extends State<ToursScreen> {
   Widget build(BuildContext context) {
     if (_isTracking) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Törn läuft')),
+        appBar: AppBar(
+          title: const Text('Törn läuft'),
+          actions: [
+            IconButton(
+              tooltip: 'Kartenebenen',
+              icon: const Icon(Icons.layers),
+              onPressed: () => showMapLayersMenu(
+                context,
+                showSeaMarks: _showSeaMarks,
+                onSeaMarksChanged: (value) =>
+                    setState(() => _showSeaMarks = value),
+                showDepth: _showDepth,
+                onDepthChanged: (value) => setState(() => _showDepth = value),
+              ),
+            ),
+          ],
+        ),
         body: Stack(
           children: [
             RouteMapView(
@@ -154,6 +173,8 @@ class _ToursScreenState extends State<ToursScreen> {
                 ),
               },
               referenceRoute: widget.referenceRoute,
+              showSeaMarks: _showSeaMarks,
+              showDepth: _showDepth,
             ),
             HudOverlay(
               speedKnots: _location.speedKnots,

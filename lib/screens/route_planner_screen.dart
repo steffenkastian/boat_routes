@@ -12,6 +12,7 @@ import '../services/route_storage_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/marker_icon_factory.dart';
 import '../widgets/hud_overlay.dart';
+import '../widgets/map_layers_menu.dart';
 import '../widgets/route_map_view.dart';
 import '../widgets/route_points_panel.dart';
 import '../widgets/save_options_dialog.dart';
@@ -158,36 +159,12 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   }
 
   void _showLayersMenu() {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SwitchListTile(
-                secondary: const Icon(Icons.anchor),
-                title: const Text('OpenSeaMap Seezeichen'),
-                value: _showSeaMarks,
-                onChanged: (value) {
-                  setState(() => _showSeaMarks = value);
-                  setSheetState(() {});
-                },
-              ),
-              SwitchListTile(
-                secondary: const Icon(Icons.waves),
-                title: const Text('Tiefenlinien (Beta)'),
-                subtitle: const Text('Deckung je nach Region lückenhaft'),
-                value: _showDepth,
-                onChanged: (value) {
-                  setState(() => _showDepth = value);
-                  setSheetState(() {});
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+    showMapLayersMenu(
+      context,
+      showSeaMarks: _showSeaMarks,
+      onSeaMarksChanged: (value) => setState(() => _showSeaMarks = value),
+      showDepth: _showDepth,
+      onDepthChanged: (value) => setState(() => _showDepth = value),
     );
   }
 
@@ -378,11 +355,15 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
           // side-by-side points panel would be squeezed to a sliver too
           // narrow for its coordinate-entry row and drag handles.
           if (constraints.maxWidth < 700) {
+            // Saved routes is just a browse/load list, often empty or short
+            // — giving it a large fixed share leaves a big blank gap above
+            // the bottom nav. Points (the active editing area) gets most of
+            // the remaining room instead.
             return Column(
               children: [
                 Expanded(flex: 5, child: mapAndHud),
-                Expanded(flex: 4, child: pointsPanel),
-                Expanded(flex: 3, child: savedPanel),
+                Expanded(flex: 6, child: pointsPanel),
+                Expanded(flex: 1, child: savedPanel),
               ],
             );
           }

@@ -16,6 +16,10 @@ class SavedRoutesPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (routes.isEmpty) {
+      return const Center(child: Text('Noch keine Routen gespeichert'));
+    }
+
     return ListView.builder(
       itemCount: routes.length,
       itemBuilder: (context, index) {
