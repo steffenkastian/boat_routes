@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../utils/openseamap_tile_provider.dart';
+
 class RouteMapView extends StatelessWidget {
   const RouteMapView({
     required this.initialCamera,
@@ -10,6 +12,7 @@ class RouteMapView extends StatelessWidget {
     required this.onMapCreated,
     this.extraMarkers = const {},
     this.showPointMarkers = true,
+    this.showSeaMarks = false,
     super.key,
   });
 
@@ -20,6 +23,7 @@ class RouteMapView extends StatelessWidget {
   final ValueChanged<GoogleMapController> onMapCreated;
   final Set<Marker> extraMarkers;
   final bool showPointMarkers;
+  final bool showSeaMarks;
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +57,7 @@ class RouteMapView extends StatelessWidget {
       },
       markers: markers,
       polylines: {polyline},
+      tileOverlays: showSeaMarks ? {openSeaMapOverlay} : {},
       zoomControlsEnabled: true,
       compassEnabled: true,
     );

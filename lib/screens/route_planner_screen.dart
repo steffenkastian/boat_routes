@@ -35,6 +35,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   bool _addingEnabled = true;
   bool _hasAutoCenteredOnLocation = false;
   bool _hudTapGuard = false;
+  bool _showSeaMarks = false;
 
   final Map<String, BitmapDescriptor> _courseLabelIcons = {};
 
@@ -202,6 +203,19 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       appBar: AppBar(
         title: const Text('Routenplaner mit Standort'),
         actions: [
+          Tooltip(
+            message: 'OpenSeaMap Seezeichen',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.anchor, size: 18),
+                Switch(
+                  value: _showSeaMarks,
+                  onChanged: (value) => setState(() => _showSeaMarks = value),
+                ),
+              ],
+            ),
+          ),
           IconButton(
             tooltip: 'Neue Route',
             icon: const Icon(Icons.add),
@@ -247,6 +261,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                           ..._buildCourseLabelMarkers(),
                           if (_location.boatMarker case final marker?) marker,
                         },
+                        showSeaMarks: _showSeaMarks,
                       ),
                       HudOverlay(
                         speedKnots: _location.speedKnots,
