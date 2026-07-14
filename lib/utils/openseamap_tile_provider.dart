@@ -29,3 +29,55 @@ final openSeaMapOverlay = TileOverlay(
   tileOverlayId: const TileOverlayId('openseamap'),
   tileProvider: OpenSeaMapTileProvider(),
 );
+
+// OpenSeaMap's depth-contour layer (crowd-sourced, marked "beta" by
+// OpenSeaMap itself — coverage varies by area) is only served as a WMS
+// (Web Map Service) endpoint, not plain XYZ tiles. This bridges the two by
+// computing each tile's Web Mercator bounding box and requesting exactly
+// that extent from the WMS server as a 256x256 image.
+class OpenSeaMapDepthTileProvider implements TileProvider {
+  static const _tileSize = 256;
+  static const _earthCircumference = 40075016.685578488; // 2 * pi * 6378137
+  static const _originShift = _earthCircumference / 2;
+
+  @override
+  Future<Tile> getTile(int x, int y, int? zoom) async {
+    if (zoom == null) return TileProvider.noTile;
+
+    final n = 1 << zoom;
+    final tileSizeMeters = _earthCircumference / n;
+    final minX = -_originShift + x * tileSizeMeters;
+    final maxX = -_originShift + (x + 1) * tileSizeMeters;
+    final maxY = _originShift - y * tileSizeMeters;
+    final minY = _originShift - (y + 1) * tileSizeMeters;
+
+    final uri = Uri.parse(
+      'https://depth.openseamap.org/geoserver/openseamap/wms',
+    ).replace(queryParameters: {
+      'SERVICE': 'WMS',
+      'VERSION': '1.1.0',
+      'REQUEST': 'GetMap',
+      'LAYERS': 'openseamap:contour2,openseamap:contour',
+      'STYLES': '',
+      'FORMAT': 'image/png',
+      'TRANSPARENT': 'true',
+      'SRS': 'EPSG:3857',
+      'BBOX': '$minX,$minY,$maxX,$maxY',
+      'WIDTH': '$_tileSize',
+      'HEIGHT': '$_tileSize',
+    });
+
+    try {
+      final response = await http.get(uri);
+      if (response.statusCode != 200) return TileProvider.noTile;
+      return Tile(_tileSize, _tileSize, response.bodyBytes);
+    } catch (_) {
+      return TileProvider.noTile;
+    }
+  }
+}
+
+final openSeaMapDepthOverlay = TileOverlay(
+  tileOverlayId: const TileOverlayId('openseamap_depth'),
+  tileProvider: OpenSeaMapDepthTileProvider(),
+);

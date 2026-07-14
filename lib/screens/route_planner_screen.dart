@@ -36,8 +36,10 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   bool _hasAutoCenteredOnLocation = false;
   bool _hudTapGuard = false;
   bool _showSeaMarks = false;
+  bool _showDepth = false;
 
   final Map<String, BitmapDescriptor> _courseLabelIcons = {};
+  final Map<int, BitmapDescriptor> _pointNumberIcons = {};
 
   @override
   void initState() {
@@ -103,30 +105,99 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     setState(() {
       _points.add(position);
     });
-    _ensureCourseLabelIcons();
+    _ensureMarkerIcons();
   }
 
   void _removePoint(int index) {
     setState(() {
       _points.removeAt(index);
     });
-    _ensureCourseLabelIcons();
+    _ensureMarkerIcons();
   }
 
-  // Route segment course labels ("123°") are drawn as map markers, which on
-  // google_maps_flutter requires baking each distinct label into a bitmap
-  // ahead of time. Generated lazily and cached by text so repeated courses
-  // (e.g. a beat back and forth) reuse the same icon.
+  void _reorderPoints(int oldIndex, int newIndex) {
+    if (newIndex > oldIndex) newIndex -= 1;
+    setState(() {
+      final point = _points.removeAt(oldIndex);
+      _points.insert(newIndex, point);
+    });
+    _ensureMarkerIcons();
+  }
+
+  Future<void> _ensureMarkerIcons() async {
+    await Future.wait([
+      _ensureCourseLabelIcons(),
+      _ensurePointNumberIcons(),
+    ]);
+  }
+
+  Future<void> _ensurePointNumberIcons() async {
+    final missing = [
+      for (var n = 1; n <= _points.length; n++)
+        if (!_pointNumberIcons.containsKey(n)) n,
+    ];
+    if (missing.isEmpty) return;
+
+    for (final n in missing) {
+      _pointNumberIcons[n] = await buildNumberedDotIcon(n);
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _showLayersMenu() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.anchor),
+                title: const Text('OpenSeaMap Seezeichen'),
+                value: _showSeaMarks,
+                onChanged: (value) {
+                  setState(() => _showSeaMarks = value);
+                  setSheetState(() {});
+                },
+              ),
+              SwitchListTile(
+                secondary: const Icon(Icons.waves),
+                title: const Text('Tiefenlinien (Beta)'),
+                subtitle: const Text('Deckung je nach Region lückenhaft'),
+                value: _showDepth,
+                onChanged: (value) {
+                  setState(() => _showDepth = value);
+                  setSheetState(() {});
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Route segment course labels ("123°" over "2.3 sm") are drawn as map
+  // markers, which on google_maps_flutter requires baking each distinct
+  // label into a bitmap ahead of time. Generated lazily and cached by the
+  // course+distance text so repeated segments (e.g. a beat back and forth)
+  // reuse the same icon.
+  String _courseLabelKey(LatLng from, LatLng to) =>
+      '${bearing(from, to).round()}°|${distanceNm(from, to).toStringAsFixed(1)} sm';
+
   Future<void> _ensureCourseLabelIcons() async {
     final needed = <String>{
       for (var i = 1; i < _points.length; i++)
-        '${bearing(_points[i - 1], _points[i]).round()}°',
+        _courseLabelKey(_points[i - 1], _points[i]),
     };
     final missing = needed.difference(_courseLabelIcons.keys.toSet());
     if (missing.isEmpty) return;
 
-    for (final text in missing) {
-      _courseLabelIcons[text] = await buildLabelIcon(text);
+    for (final key in missing) {
+      final parts = key.split('|');
+      _courseLabelIcons[key] =
+          await buildLabelIcon(parts[0], secondaryText: parts[1]);
     }
     if (mounted) setState(() {});
   }
@@ -136,8 +207,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     for (var i = 1; i < _points.length; i++) {
       final from = _points[i - 1];
       final to = _points[i];
-      final text = '${bearing(from, to).round()}°';
-      final icon = _courseLabelIcons[text];
+      final icon = _courseLabelIcons[_courseLabelKey(from, to)];
       if (icon == null) continue;
 
       markers.add(Marker(
@@ -167,7 +237,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         ..clear()
         ..addAll(route.points);
     });
-    _ensureCourseLabelIcons();
+    _ensureMarkerIcons();
   }
 
   Future<void> _deleteRoute(int index) async {
@@ -203,18 +273,10 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       appBar: AppBar(
         title: const Text('Routenplaner mit Standort'),
         actions: [
-          Tooltip(
-            message: 'OpenSeaMap Seezeichen',
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.anchor, size: 18),
-                Switch(
-                  value: _showSeaMarks,
-                  onChanged: (value) => setState(() => _showSeaMarks = value),
-                ),
-              ],
-            ),
+          IconButton(
+            tooltip: 'Kartenebenen',
+            icon: const Icon(Icons.layers),
+            onPressed: _showLayersMenu,
           ),
           IconButton(
             tooltip: 'Neue Route',
@@ -262,6 +324,8 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                           if (_location.boatMarker case final marker?) marker,
                         },
                         showSeaMarks: _showSeaMarks,
+                        showDepth: _showDepth,
+                        pointIcons: _pointNumberIcons,
                       ),
                       HudOverlay(
                         speedKnots: _location.speedKnots,
@@ -278,6 +342,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                     points: _points,
                     onRemovePoint: _removePoint,
                     onAddPoint: _addPoint,
+                    onReorderPoints: _reorderPoints,
                   ),
                 ),
               ],

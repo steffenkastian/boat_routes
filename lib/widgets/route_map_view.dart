@@ -13,6 +13,8 @@ class RouteMapView extends StatelessWidget {
     this.extraMarkers = const {},
     this.showPointMarkers = true,
     this.showSeaMarks = false,
+    this.showDepth = false,
+    this.pointIcons = const {},
     super.key,
   });
 
@@ -24,6 +26,10 @@ class RouteMapView extends StatelessWidget {
   final Set<Marker> extraMarkers;
   final bool showPointMarkers;
   final bool showSeaMarks;
+  final bool showDepth;
+  // Keyed by 1-based point number, falls back to the default red pin while
+  // the numbered icon hasn't finished generating yet.
+  final Map<int, BitmapDescriptor> pointIcons;
 
   @override
   Widget build(BuildContext context) {
@@ -32,10 +38,13 @@ class RouteMapView extends StatelessWidget {
       markers.addAll(points.asMap().entries.map((entry) {
         final idx = entry.key;
         final pos = entry.value;
+        final icon = pointIcons[idx + 1];
         return Marker(
           markerId: MarkerId('point_$idx'),
           position: pos,
           infoWindow: InfoWindow(title: 'Punkt ${idx + 1}'),
+          icon: icon ?? BitmapDescriptor.defaultMarker,
+          anchor: icon != null ? const Offset(0.5, 0.5) : const Offset(0.5, 1.0),
         );
       }));
     }
@@ -57,7 +66,10 @@ class RouteMapView extends StatelessWidget {
       },
       markers: markers,
       polylines: {polyline},
-      tileOverlays: showSeaMarks ? {openSeaMapOverlay} : {},
+      tileOverlays: {
+        if (showDepth) openSeaMapDepthOverlay,
+        if (showSeaMarks) openSeaMapOverlay,
+      },
       zoomControlsEnabled: true,
       compassEnabled: true,
     );
