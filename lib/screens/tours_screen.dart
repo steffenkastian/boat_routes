@@ -10,11 +10,15 @@ import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/regatta_storage_service.dart';
 import '../services/tour_storage_service.dart';
+import '../services/user_library_service.dart';
 import '../utils/geo_utils.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/hud_overlay.dart';
 import '../widgets/map_layers_menu.dart';
+import '../widgets/prompt_name_dialog.dart';
 import '../widgets/route_map_view.dart';
 import '../widgets/save_options_dialog.dart';
+import 'tour_detail_screen.dart';
 
 class ToursScreen extends StatefulWidget {
   const ToursScreen({this.referenceRoute, this.referenceRouteLabel, super.key});
@@ -36,6 +40,7 @@ class _ToursScreenState extends State<ToursScreen> {
 
   final _tourStorage = TourStorageService();
   final _regattaStorage = RegattaStorageService();
+  final _userLibrary = UserLibraryService();
   final _location = LiveLocationController(LocationService());
   final _auth = AuthController(AuthService());
   final _referenceAnnotations = RouteAnnotationsController();
@@ -46,6 +51,7 @@ class _ToursScreenState extends State<ToursScreen> {
   DateTime? _startedAt;
   bool _showSeaMarks = false;
   bool _showDepth = false;
+  String? _syncedForUid;
 
   @override
   void initState() {
@@ -77,8 +83,33 @@ class _ToursScreenState extends State<ToursScreen> {
   }
 
   void _onLocationChanged() => setState(() {});
-  void _onAuthChanged() => setState(() {});
   void _onAnnotationsChanged() => setState(() {});
+
+  void _onAuthChanged() {
+    final uid = _auth.currentUser?.uid;
+    if (uid != null && uid != _syncedForUid) {
+      _syncedForUid = uid;
+      _mergeCloudTours(uid);
+    } else if (uid == null) {
+      _syncedForUid = null;
+    }
+    setState(() {});
+  }
+
+  // Merges in Törns saved to this account from any device — local storage
+  // stays authoritative for offline/logged-out use, this just adds what
+  // isn't already present (matched by start time, which is unique per Törn).
+  Future<void> _mergeCloudTours(String uid) async {
+    final cloudTours = await _userLibrary.loadTours(uid);
+    if (!mounted) return;
+    setState(() {
+      for (final tour in cloudTours) {
+        final alreadyPresent =
+            _savedTours.any((t) => t.startedAt == tour.startedAt);
+        if (!alreadyPresent) _savedTours.add(tour);
+      }
+    });
+  }
 
   Future<void> _loadTours() async {
     final tours = await _tourStorage.loadTours();
@@ -117,6 +148,11 @@ class _ToursScreenState extends State<ToursScreen> {
     await _tourStorage.addTour(tour);
     setState(() => _savedTours.add(tour));
 
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      await _userLibrary.addTour(uid, tour);
+    }
+
     if (options.publishAsRegatta) {
       await _regattaStorage.addRegatta(Regatta(
         name: options.name,
@@ -127,12 +163,56 @@ class _ToursScreenState extends State<ToursScreen> {
     }
   }
 
+  Future<void> _deleteTour(int index) async {
+    final tour = _savedTours[index];
+    final confirmed = await confirmDialog(
+      context,
+      title: 'Törn löschen?',
+      message: '"${tour.name}" wirklich löschen?',
+    );
+    if (!confirmed) return;
+
+    await _tourStorage.deleteTourAt(index);
+    setState(() => _savedTours.removeAt(index));
+  }
+
+  Future<void> _renameTour(int index) async {
+    final tour = _savedTours[index];
+    final newName = await promptForName(
+      context,
+      title: 'Törn umbenennen',
+      hint: tour.name,
+    );
+    if (newName == null) return;
+
+    await _tourStorage.renameTourAt(index, newName);
+    setState(() {
+      _savedTours[index] = Tour(
+        name: newName,
+        points: tour.points,
+        startedAt: tour.startedAt,
+        endedAt: tour.endedAt,
+      );
+    });
+  }
+
+  void _viewTour(Tour tour) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => TourDetailScreen(tour: tour)),
+    );
+  }
+
   String _tourSubtitle(Tour tour) {
     final date = tour.startedAt;
     final dateText =
         '${date.day.toString().padLeft(2, '0')}.${date.month.toString().padLeft(2, '0')}.${date.year}';
     final distance = totalDistanceNm(tour.points);
-    return '$dateText  •  ${distance.toStringAsFixed(2)} sm';
+    final duration = tour.endedAt.difference(tour.startedAt);
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final durationText = hours > 0 ? '${hours}h ${minutes}min' : '${minutes}min';
+    return '$dateText  •  ${distance.toStringAsFixed(2)} sm  •  $durationText';
   }
 
   @override
@@ -250,6 +330,26 @@ class _ToursScreenState extends State<ToursScreen> {
                           leading: const Icon(Icons.directions_boat),
                           title: Text(tour.name),
                           subtitle: Text(_tourSubtitle(tour)),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: 'Route ansehen',
+                                icon: const Icon(Icons.map),
+                                onPressed: () => _viewTour(tour),
+                              ),
+                              IconButton(
+                                tooltip: 'Umbenennen',
+                                icon: const Icon(Icons.edit),
+                                onPressed: () => _renameTour(index),
+                              ),
+                              IconButton(
+                                tooltip: 'Löschen',
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () => _deleteTour(index),
+                              ),
+                            ],
+                          ),
                         );
                       },
                     ),

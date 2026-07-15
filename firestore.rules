@@ -11,6 +11,14 @@ service cloud.firestore {
                     && request.resource.data.isAdmin == false;
       allow update: if request.auth != null && request.auth.uid == userId
                     && request.resource.data.isAdmin == resource.data.isAdmin;
+
+      // A user's own synced routes/Törns — fully private, never public.
+      match /routes/{routeId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      match /tours/{tourId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
 
     // Reads stay open (PLZ search works without login). Only signed-in

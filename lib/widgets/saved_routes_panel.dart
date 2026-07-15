@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/boat_route.dart';
+import 'confirm_dialog.dart';
 
 class SavedRoutesPanel extends StatelessWidget {
   const SavedRoutesPanel({
@@ -36,7 +37,14 @@ class SavedRoutesPanel extends StatelessWidget {
               ),
               IconButton(
                 icon: const Icon(Icons.delete, color: Colors.red),
-                onPressed: () => onDelete(index),
+                onPressed: () async {
+                  final confirmed = await confirmDialog(
+                    context,
+                    title: 'Route löschen?',
+                    message: '"${route.name}" wirklich löschen?',
+                  );
+                  if (confirmed) onDelete(index);
+                },
               ),
             ],
           ),

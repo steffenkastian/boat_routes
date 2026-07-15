@@ -9,6 +9,7 @@ import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/regatta_storage_service.dart';
 import '../services/route_storage_service.dart';
+import '../services/user_library_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/marker_icon_factory.dart';
 import '../widgets/hud_overlay.dart';
@@ -35,6 +36,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
   final _routeStorage = RouteStorageService();
   final _regattaStorage = RegattaStorageService();
+  final _userLibrary = UserLibraryService();
   final _location = LiveLocationController(LocationService());
   final _auth = AuthController(AuthService());
 
@@ -46,6 +48,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   bool _hudTapGuard = false;
   bool _showSeaMarks = false;
   bool _showDepth = false;
+  String? _syncedForUid;
 
   final Map<String, BitmapDescriptor> _courseLabelIcons = {};
   final Map<int, BitmapDescriptor> _pointNumberIcons = {};
@@ -68,7 +71,32 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     super.dispose();
   }
 
-  void _onAuthChanged() => setState(() {});
+  void _onAuthChanged() {
+    final uid = _auth.currentUser?.uid;
+    if (uid != null && uid != _syncedForUid) {
+      _syncedForUid = uid;
+      _mergeCloudRoutes(uid);
+    } else if (uid == null) {
+      _syncedForUid = null;
+    }
+    setState(() {});
+  }
+
+  // Merges in routes saved to this account from any device — local storage
+  // stays authoritative for offline/logged-out use, this just adds what
+  // isn't already present (matched by name + save time).
+  Future<void> _mergeCloudRoutes(String uid) async {
+    final cloudRoutes = await _userLibrary.loadRoutes(uid);
+    if (!mounted) return;
+    setState(() {
+      for (final route in cloudRoutes) {
+        final alreadyPresent = _savedRoutes.any(
+          (r) => r.name == route.name && r.createdAt == route.createdAt,
+        );
+        if (!alreadyPresent) _savedRoutes.add(route);
+      }
+    });
+  }
 
   void _onLocationChanged() {
     if (!_hasAutoCenteredOnLocation && _location.currentPosition != null) {
@@ -258,6 +286,19 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       _savedRoutes.add(newRoute);
     });
 
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      try {
+        await _userLibrary.addRoute(uid, newRoute);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cloud-Sync fehlgeschlagen: $e')),
+          );
+        }
+      }
+    }
+
     if (options.publishAsRegatta) {
       await _regattaStorage.addRegatta(Regatta(
         name: options.name,
@@ -312,98 +353,110 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       onReorderPoints: _reorderPoints,
     );
 
-    final savedPanel = SavedRoutesPanel(
-      routes: _savedRoutes,
-      onLoad: _loadRoute,
-      onDelete: _deleteRoute,
-    );
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Routenplaner mit Standort'),
-        actions: [
-          IconButton(
-            tooltip: 'Kartenebenen',
-            icon: const Icon(Icons.layers),
-            onPressed: _showLayersMenu,
-          ),
-          IconButton(
-            tooltip: 'Törn starten',
-            icon: const Icon(Icons.play_circle_outline),
-            onPressed: _points.isEmpty
-                ? null
-                : () => widget.onStartTour(List.of(_points)),
-          ),
-          IconButton(
-            tooltip: 'Neue Route',
-            icon: const Icon(Icons.add),
-            onPressed: () {
-              setState(() {
-                _points.clear();
-              });
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _saveRoute,
-          ),
-        ],
+    final appBarActions = [
+      IconButton(
+        tooltip: 'Gespeicherte Routen',
+        icon: const Icon(Icons.folder_open),
+        onPressed: _showSavedRoutes,
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          // A short viewport (phone in landscape — plenty of width but very
-          // little height) needs a different split than a narrow portrait
-          // phone: checked first since a landscape phone can easily be
-          // wider than the portrait breakpoint below.
-          if (constraints.maxHeight < 500) {
-            return Row(
-              children: [
-                Expanded(flex: 5, child: mapAndHud),
-                Expanded(
-                  flex: 2,
-                  child: Column(
-                    children: [
-                      Expanded(flex: 5, child: pointsPanel),
-                      Expanded(flex: 1, child: savedPanel),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          }
+      IconButton(
+        tooltip: 'Kartenebenen',
+        icon: const Icon(Icons.layers),
+        onPressed: _showLayersMenu,
+      ),
+      IconButton(
+        tooltip: 'Törn starten',
+        icon: const Icon(Icons.play_circle_outline),
+        onPressed: _points.isEmpty
+            ? null
+            : () => widget.onStartTour(List.of(_points)),
+      ),
+      IconButton(
+        tooltip: 'Neue Route',
+        icon: const Icon(Icons.add),
+        onPressed: () {
+          setState(() {
+            _points.clear();
+          });
+        },
+      ),
+      IconButton(
+        icon: const Icon(Icons.save),
+        onPressed: _saveRoute,
+      ),
+    ];
 
-          // Narrow (portrait phone) screens stack everything vertically —
-          // a side-by-side points panel would be squeezed to a sliver too
-          // narrow for its coordinate-entry row and drag handles.
-          if (constraints.maxWidth < 700) {
-            // Saved routes is just a browse/load list, often empty or short
-            // — giving it a large fixed share leaves a big blank gap above
-            // the bottom nav. Points (the active editing area) gets most of
-            // the remaining room instead.
-            return Column(
-              children: [
-                Expanded(flex: 5, child: mapAndHud),
-                Expanded(flex: 6, child: pointsPanel),
-                Expanded(flex: 1, child: savedPanel),
-              ],
-            );
-          }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // A short viewport (phone in landscape — plenty of width but very
+        // little height) needs the map to dominate the screen; the points
+        // panel moves into a Drawer (opened via the AppBar's automatic
+        // hamburger icon) instead of a permanent side column. Checked first
+        // since a landscape phone can easily be wider than the portrait
+        // breakpoint below.
+        if (constraints.maxHeight < 500) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Routenplaner mit Standort'),
+              actions: appBarActions,
+            ),
+            drawer: Drawer(child: SafeArea(child: pointsPanel)),
+            body: mapAndHud,
+          );
+        }
 
-          return Column(
+        final Widget body;
+        // Narrow (portrait phone) screens stack everything vertically — a
+        // side-by-side points panel would be squeezed to a sliver too
+        // narrow for its coordinate-entry row and drag handles.
+        if (constraints.maxWidth < 700) {
+          body = Column(
             children: [
-              Expanded(
-                flex: 2,
-                child: Row(
-                  children: [
-                    Expanded(flex: 3, child: mapAndHud),
-                    Expanded(flex: 1, child: pointsPanel),
-                  ],
-                ),
-              ),
-              Expanded(flex: 1, child: savedPanel),
+              Expanded(flex: 5, child: mapAndHud),
+              Expanded(flex: 7, child: pointsPanel),
             ],
           );
-        },
+        } else {
+          body = Row(
+            children: [
+              Expanded(flex: 3, child: mapAndHud),
+              Expanded(flex: 1, child: pointsPanel),
+            ],
+          );
+        }
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Routenplaner mit Standort'),
+            actions: appBarActions,
+          ),
+          body: body,
+        );
+      },
+    );
+  }
+
+  void _showSavedRoutes() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setSheetState) => FractionallySizedBox(
+          heightFactor: 0.7,
+          child: SafeArea(
+            child: SavedRoutesPanel(
+              routes: _savedRoutes,
+              onLoad: (route) {
+                Navigator.pop(context);
+                _loadRoute(route);
+              },
+              onDelete: (index) {
+                _deleteRoute(index);
+                setSheetState(() {});
+              },
+            ),
+          ),
+        ),
       ),
     );
   }
