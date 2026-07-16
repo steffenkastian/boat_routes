@@ -30,12 +30,12 @@ final openSeaMapOverlay = TileOverlay(
   tileProvider: OpenSeaMapTileProvider(),
 );
 
-// OpenSeaMap's depth-contour layer (crowd-sourced, marked "beta" by
-// OpenSeaMap itself — coverage varies by area) is only served as a WMS
-// (Web Map Service) endpoint, not plain XYZ tiles. This bridges the two by
-// computing each tile's Web Mercator bounding box and requesting exactly
-// that extent from the WMS server as a 256x256 image.
-class OpenSeaMapDepthTileProvider implements TileProvider {
+// EMODnet Bathymetry's "contours" layer (generalised depth isobaths) is
+// only served as WMS, not tile-friendly WMTS — unlike OpenSeaMap's depth
+// WMS, it does send CORS headers (Access-Control-Allow-Origin: *), so this
+// bridges it to per-tile requests the same way: compute each tile's Web
+// Mercator bounding box and ask the WMS server for exactly that extent.
+class EmodnetContoursTileProvider implements TileProvider {
   static const _tileSize = 256;
   static const _earthCircumference = 40075016.685578488; // 2 * pi * 6378137
   static const _originShift = _earthCircumference / 2;
@@ -51,21 +51,21 @@ class OpenSeaMapDepthTileProvider implements TileProvider {
     final maxY = _originShift - y * tileSizeMeters;
     final minY = _originShift - (y + 1) * tileSizeMeters;
 
-    final uri = Uri.parse(
-      'https://depth.openseamap.org/geoserver/openseamap/wms',
-    ).replace(queryParameters: {
-      'SERVICE': 'WMS',
-      'VERSION': '1.1.0',
-      'REQUEST': 'GetMap',
-      'LAYERS': 'openseamap:contour2,openseamap:contour',
-      'STYLES': '',
-      'FORMAT': 'image/png',
-      'TRANSPARENT': 'true',
-      'SRS': 'EPSG:3857',
-      'BBOX': '$minX,$minY,$maxX,$maxY',
-      'WIDTH': '$_tileSize',
-      'HEIGHT': '$_tileSize',
-    });
+    final uri = Uri.parse('https://ows.emodnet-bathymetry.eu/wms').replace(
+      queryParameters: {
+        'SERVICE': 'WMS',
+        'VERSION': '1.3.0',
+        'REQUEST': 'GetMap',
+        'LAYERS': 'emodnet:contours',
+        'STYLES': '',
+        'FORMAT': 'image/png',
+        'TRANSPARENT': 'true',
+        'CRS': 'EPSG:3857',
+        'BBOX': '$minX,$minY,$maxX,$maxY',
+        'WIDTH': '$_tileSize',
+        'HEIGHT': '$_tileSize',
+      },
+    );
 
     try {
       final response = await http.get(uri);
@@ -77,7 +77,7 @@ class OpenSeaMapDepthTileProvider implements TileProvider {
   }
 }
 
-final openSeaMapDepthOverlay = TileOverlay(
-  tileOverlayId: const TileOverlayId('openseamap_depth'),
-  tileProvider: OpenSeaMapDepthTileProvider(),
+final depthOverlay = TileOverlay(
+  tileOverlayId: const TileOverlayId('depth'),
+  tileProvider: EmodnetContoursTileProvider(),
 );

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../controllers/auth_controller.dart';
 import '../controllers/live_location_controller.dart';
+import '../controllers/mark_rounding_controller.dart';
 import '../controllers/route_annotations_controller.dart';
 import '../models/regatta.dart';
 import '../models/tour.dart';
@@ -52,6 +54,8 @@ class _ToursScreenState extends State<ToursScreen> {
   bool _showSeaMarks = false;
   bool _showDepth = false;
   String? _syncedForUid;
+  MarkRoundingController? _markRounding;
+  LatLng? _queriedPoint;
 
   @override
   void initState() {
@@ -79,10 +83,19 @@ class _ToursScreenState extends State<ToursScreen> {
     _auth.dispose();
     _referenceAnnotations.removeListener(_onAnnotationsChanged);
     _referenceAnnotations.dispose();
+    if (_isTracking) WakelockPlus.disable();
     super.dispose();
   }
 
-  void _onLocationChanged() => setState(() {});
+  void _onLocationChanged() {
+    final position = _location.currentPosition;
+    if (_isTracking && position != null) {
+      _markRounding?.updateWithPosition(
+        LatLng(position.latitude, position.longitude),
+      );
+    }
+    setState(() {});
+  }
   void _onAnnotationsChanged() => setState(() {});
 
   void _onAuthChanged() {
@@ -117,10 +130,21 @@ class _ToursScreenState extends State<ToursScreen> {
   }
 
   Future<void> _startTour() async {
+    final route = widget.referenceRoute;
     setState(() {
       _isTracking = true;
       _startedAt = DateTime.now();
+      _queriedPoint = null;
+      _markRounding = route != null && route.isNotEmpty
+          ? MarkRoundingController(route)
+          : null;
     });
+    // True background tracking (screen off, browser tab backgrounded) isn't
+    // achievable for a web app — mobile browsers throttle/suspend
+    // geolocation once the screen locks. Keeping the screen awake is the
+    // practical equivalent, and also avoids the GPS jump that tends to
+    // happen right as the stream is suspended/resumed around a lock.
+    await WakelockPlus.enable();
     _location.startRecording();
     await _location.start();
   }
@@ -128,8 +152,13 @@ class _ToursScreenState extends State<ToursScreen> {
   Future<void> _endTour() async {
     final points = _location.stopRecording();
     final startedAt = _startedAt;
-    setState(() => _isTracking = false);
-    if (points.isEmpty || startedAt == null) return;
+    setState(() {
+      _isTracking = false;
+      _markRounding = null;
+      _queriedPoint = null;
+    });
+    await WakelockPlus.disable();
+    if (points.isEmpty || startedAt == null || !mounted) return;
 
     final options = await promptForSaveOptions(
       context,
@@ -196,6 +225,34 @@ class _ToursScreenState extends State<ToursScreen> {
     });
   }
 
+  void _handleTrackingTap(LatLng position) {
+    setState(() => _queriedPoint = position);
+  }
+
+  String? get _nextMarkInfoText {
+    final rounding = _markRounding;
+    final position = _location.currentPosition;
+    if (rounding == null || position == null) return null;
+    if (rounding.isFinished) return 'Alle Tonnen gerundet';
+
+    final from = LatLng(position.latitude, position.longitude);
+    final distance = rounding.distanceToTargetNm(from);
+    final course = rounding.bearingToTarget(from);
+    if (distance == null || course == null) return null;
+    return 'Nächste Tonne: ${course.round()}°  •  ${distance.toStringAsFixed(2)} sm';
+  }
+
+  String? get _queriedPointInfoText {
+    final point = _queriedPoint;
+    final position = _location.currentPosition;
+    if (point == null || position == null) return null;
+
+    final from = LatLng(position.latitude, position.longitude);
+    final course = bearing(from, point).round();
+    final distance = distanceNm(from, point);
+    return 'Kurs: $course°  •  Abstand: ${distance.toStringAsFixed(2)} sm';
+  }
+
   void _viewTour(Tour tour) {
     Navigator.push(
       context,
@@ -241,9 +298,8 @@ class _ToursScreenState extends State<ToursScreen> {
             RouteMapView(
               initialCamera: _initialCamera,
               points: _location.track,
-              addingEnabled: false,
               showPointMarkers: false,
-              onTap: (_) {},
+              onTap: _handleTrackingTap,
               onMapCreated: (controller) => _mapController = controller,
               extraMarkers: {
                 if (_location.boatMarker case final marker?) marker,
@@ -251,6 +307,14 @@ class _ToursScreenState extends State<ToursScreen> {
                   widget.referenceRoute ?? const [],
                   idPrefix: 'reference',
                 ),
+                if (_queriedPoint case final point?)
+                  Marker(
+                    markerId: const MarkerId('queried_point'),
+                    position: point,
+                    icon: BitmapDescriptor.defaultMarkerWithHue(
+                      BitmapDescriptor.hueViolet,
+                    ),
+                  ),
               },
               referenceRoute: widget.referenceRoute,
               showSeaMarks: _showSeaMarks,
@@ -271,6 +335,55 @@ class _ToursScreenState extends State<ToursScreen> {
                 );
               },
             ),
+            if (_nextMarkInfoText case final text?)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Card(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    child: Text(
+                      text,
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                  ),
+                ),
+              ),
+            if (_queriedPointInfoText case final text?)
+              Positioned(
+                right: 8,
+                top: 56,
+                child: Card(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          text,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close,
+                              color: Colors.white, size: 16),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => setState(() => _queriedPoint = null),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             Positioned(
               left: 16,
               right: 16,

@@ -1,0 +1,44 @@
+import 'package:flutter/foundation.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+
+import '../utils/geo_utils.dart';
+
+// Tracks progress along a planned route's waypoints ("Tonnen"): once the
+// live position comes within the rounding radius of the current target
+// waypoint, it's considered rounded and the next one becomes the target.
+// Exposes distance/course from a live position to the current target for a
+// simple regatta-style navigation readout.
+class MarkRoundingController extends ChangeNotifier {
+  MarkRoundingController(this.marks);
+
+  final List<LatLng> marks;
+
+  static const _roundingRadiusMeters = 30.0;
+
+  int currentTargetIndex = 0;
+
+  LatLng? get currentTarget =>
+      currentTargetIndex < marks.length ? marks[currentTargetIndex] : null;
+
+  bool get isFinished => marks.isEmpty || currentTargetIndex >= marks.length;
+
+  void updateWithPosition(LatLng position) {
+    final target = currentTarget;
+    if (target == null) return;
+
+    if (distanceMeters(position, target) <= _roundingRadiusMeters) {
+      currentTargetIndex++;
+      notifyListeners();
+    }
+  }
+
+  double? distanceToTargetNm(LatLng position) {
+    final target = currentTarget;
+    return target == null ? null : distanceNm(position, target);
+  }
+
+  double? bearingToTarget(LatLng position) {
+    final target = currentTarget;
+    return target == null ? null : bearing(position, target);
+  }
+}

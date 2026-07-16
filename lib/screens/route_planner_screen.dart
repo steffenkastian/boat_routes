@@ -150,6 +150,11 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     _ensureMarkerIcons();
   }
 
+  void _handleMapTap(LatLng position) {
+    if (!_addingEnabled) return;
+    _addPoint(position);
+  }
+
   void _removePoint(int index) {
     setState(() {
       _points.removeAt(index);
@@ -316,8 +321,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         RouteMapView(
           initialCamera: _initialCamera,
           points: _points,
-          addingEnabled: _addingEnabled,
-          onTap: _addPoint,
+          onTap: _handleMapTap,
           onMapCreated: (controller) {
             _mapController = controller;
             final position = _location.currentPosition;

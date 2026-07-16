@@ -25,6 +25,12 @@ class LiveLocationController extends ChangeNotifier {
   // moved at least this far.
   static const _minMovementForHeadingMeters = 3.0;
 
+  // A single bad fix (observed occasionally after the screen was locked and
+  // the browser suspended/resumed the position stream) can imply an
+  // impossible speed — e.g. "500m in 1s". Reject anything faster than a very
+  // generous upper bound for a boat instead of recording the jump.
+  static const _maxPlausibleSpeedMps = 30.0; // ~58 knots
+
   StreamSubscription<geo.Position>? _positionSub;
   // google_maps_flutter_web's Marker.rotation is silently ignored for
   // raster icons (only vector Symbol icons rotate on the classic
@@ -34,6 +40,7 @@ class LiveLocationController extends ChangeNotifier {
   final Map<int, BitmapDescriptor> _boatIconsByHeading = {};
   final Set<int> _pendingBoatIconBuckets = {};
   LatLng? _lastFixForHeading;
+  DateTime? _lastFixTime;
 
   Timer? _fixTimeoutTimer;
 
@@ -167,14 +174,30 @@ class LiveLocationController extends ChangeNotifier {
         (position) {
           _fixTimeoutTimer?.cancel();
           final fix = LatLng(position.latitude, position.longitude);
+
+          final lastFix = _lastFixForHeading;
+          final lastTime = _lastFixTime;
+          if (lastFix != null && lastTime != null) {
+            final elapsedSeconds =
+                position.timestamp.difference(lastTime).inMilliseconds / 1000;
+            if (elapsedSeconds > 0 &&
+                distanceMeters(lastFix, fix) / elapsedSeconds >
+                    _maxPlausibleSpeedMps) {
+              // Outlier (e.g. a jump right after the screen was locked and
+              // the position stream resumed) — drop it and wait for the
+              // next fix rather than recording/showing an impossible jump.
+              return;
+            }
+          }
+
           currentPosition = position;
           streamError = null;
-          final lastFix = _lastFixForHeading;
           if (lastFix != null &&
               distanceMeters(lastFix, fix) >= _minMovementForHeadingMeters) {
             displayedHeading = bearing(lastFix, fix);
           }
           _lastFixForHeading = fix;
+          _lastFixTime = position.timestamp;
           if (isRecording) track.add(fix);
           notifyListeners();
         },

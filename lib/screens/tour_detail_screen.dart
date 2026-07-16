@@ -49,7 +49,6 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
       body: RouteMapView(
         initialCamera: initialCamera,
         points: points,
-        addingEnabled: false,
         showPointMarkers: false,
         onTap: (_) {},
         onMapCreated: (_) {},

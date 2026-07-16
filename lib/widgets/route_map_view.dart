@@ -7,7 +7,6 @@ class RouteMapView extends StatelessWidget {
   const RouteMapView({
     required this.initialCamera,
     required this.points,
-    required this.addingEnabled,
     required this.onTap,
     required this.onMapCreated,
     this.extraMarkers = const {},
@@ -21,7 +20,9 @@ class RouteMapView extends StatelessWidget {
 
   final CameraPosition initialCamera;
   final List<LatLng> points;
-  final bool addingEnabled;
+  // Always fires on a map tap — callers that only sometimes want to act on
+  // it (e.g. Route planen only adding a point while editing is enabled)
+  // decide that themselves rather than this widget gating it.
   final ValueChanged<LatLng> onTap;
   final ValueChanged<GoogleMapController> onMapCreated;
   final Set<Marker> extraMarkers;
@@ -77,13 +78,11 @@ class RouteMapView extends StatelessWidget {
     return GoogleMap(
       initialCameraPosition: initialCamera,
       onMapCreated: onMapCreated,
-      onTap: (pos) {
-        if (addingEnabled) onTap(pos);
-      },
+      onTap: onTap,
       markers: markers,
       polylines: polylines,
       tileOverlays: {
-        if (showDepth) openSeaMapDepthOverlay,
+        if (showDepth) depthOverlay,
         if (showSeaMarks) openSeaMapOverlay,
       },
       zoomControlsEnabled: true,
