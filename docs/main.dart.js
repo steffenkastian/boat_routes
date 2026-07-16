@@ -44713,17 +44713,17 @@ return A.w($async$zh,r)},
 uS(){var s=0,r=A.x(t.H),q=this,p,o,n
 var $async$uS=A.t(function(a,b){if(a===1)return A.u(b,r)
 while(true)switch(s){case 0:q.a3(new A.aBK(q,q.a.c))
-s=2
-return A.y($.aFm().tg(0,!0),$async$uS)
-case 2:p=q.r
+p=q.r
 o=p.as
 B.b.W(o)
 p.Q=!0
 n=p.w
 if(n!=null)o.push(A.dK(n.a,n.b))
 p.a7()
-s=3
+s=2
 return A.y(p.km(0),$async$uS)
+case 2:s=3
+return A.y($.aFm().tg(0,!0),$async$uS)
 case 3:return A.v(null,r)}})
 return A.w($async$uS,r)},
 mM(){var s=0,r=A.x(t.H),q,p=this,o,n,m,l,k,j,i

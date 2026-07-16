@@ -139,14 +139,20 @@ class _ToursScreenState extends State<ToursScreen> {
           ? MarkRoundingController(route)
           : null;
     });
+    // Start the location request first, right on top of the button tap —
+    // some mobile browsers only show the permission prompt when the
+    // request is the very next thing to happen after a real user gesture,
+    // and awaiting something else (even the Wake Lock request below) first
+    // can consume that and leave the geolocation call hanging forever.
+    _location.startRecording();
+    await _location.start();
+
     // True background tracking (screen off, browser tab backgrounded) isn't
     // achievable for a web app — mobile browsers throttle/suspend
     // geolocation once the screen locks. Keeping the screen awake is the
     // practical equivalent, and also avoids the GPS jump that tends to
     // happen right as the stream is suspended/resumed around a lock.
     await WakelockPlus.enable();
-    _location.startRecording();
-    await _location.start();
   }
 
   Future<void> _endTour() async {
