@@ -1,17 +1,1 @@
-{
-  "flutter": {
-    "platforms": {
-      "dart": {
-        "lib/firebase_options.dart": {
-          "projectId": "boat-routes-web",
-          "configurations": {
-            "web": "1:655315598805:web:0e77ea07193a17ccd0915c"
-          }
-        }
-      }
-    }
-  },
-  "firestore": {
-    "rules": "firestore.rules"
-  }
-}
+{"flutter":{"platforms":{"dart":{"lib/firebase_options.dart":{"projectId":"boat-routes-web","configurations":{"android":"1:655315598805:android:e0e289e391f7a200d0915c","web":"1:655315598805:web:0e77ea07193a17ccd0915c"}}},"android":{"default":{"projectId":"boat-routes-web","appId":"1:655315598805:android:e0e289e391f7a200d0915c","fileOutput":"android/app/google-services.json"}}}},"firestore":{"rules":"firestore.rules"}}

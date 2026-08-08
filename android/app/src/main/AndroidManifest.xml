@@ -1,10 +1,27 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Background tracking while a Törn is running: the "always" location
+         tier plus a foreground service (exempt from Doze/battery
+         suspension) are what let GPS updates keep coming while the screen
+         is locked, which a plain web app can never do. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Required by ForegroundNotificationConfig.enableWakeLock, which keeps
+         the CPU awake so fixes keep arriving while the screen is locked. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application
         android:label="boat_routes_web"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Restricted to this app's package name + debug-keystore SHA-1 and
+             to the Maps SDK for Android only (see the plan notes on why this
+             is a separate key from the web build's, which is restricted by
+             HTTP referrer instead — Android doesn't use referrers). -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyC_VK8fdB9ZDTBIbUYP3nbZkwBgXvMceCs" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

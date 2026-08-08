@@ -160,6 +160,19 @@ class _ToursScreenState extends State<ToursScreen> {
     _location.startRecording();
     await _location.start();
 
+    // On Android this requests the separate "always" (background) location
+    // tier — a no-op everywhere else. Foreground tracking still works fine
+    // if it's denied, so this doesn't block on the result.
+    if (!await _location.ensureBackgroundPermission() && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Standort im Hintergrund nicht erlaubt — Tracking pausiert, sobald der Bildschirm gesperrt wird.',
+          ),
+        ),
+      );
+    }
+
     // True background tracking (screen off, browser tab backgrounded) isn't
     // achievable for a web app — mobile browsers throttle/suspend
     // geolocation once the screen locks. Keeping the screen awake is the

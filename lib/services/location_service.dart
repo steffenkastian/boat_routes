@@ -1,4 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart' as ph;
+
+// kIsWeb/defaultTargetPlatform (not dart:io's Platform, which fails to
+// compile at all for the web target) — the standard cross-platform-safe way
+// to branch on platform in code shared between the web and Android builds.
+bool get isAndroidPlatform =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
 enum LocationAccessStatus {
   granted,
@@ -42,13 +50,44 @@ class LocationService {
     }
   }
 
+  // Android splits "while in use" and "always" (background) location into
+  // two separate OS prompts — the second only requestable after the first
+  // is granted. Only meaningful (and only called) when starting a Törn on
+  // Android; a no-op everywhere else, including web, where there's no such
+  // tier and no background execution to grant it for anyway.
+  Future<bool> ensureBackgroundPermission() async {
+    if (!isAndroidPlatform) return true;
+    final status = await ph.Permission.locationAlways.request();
+    return status.isGranted;
+  }
+
   Stream<Position> positionStream({LocationSettings? settings}) {
     return Geolocator.getPositionStream(
-      locationSettings: settings ??
-          const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            distanceFilter: 3,
-          ),
+      locationSettings: settings ?? _defaultSettings(),
+    );
+  }
+
+  LocationSettings _defaultSettings() {
+    if (isAndroidPlatform) {
+      // A foregroundNotificationConfig makes geolocator_android run a real
+      // foreground service, which is what actually sustains these updates
+      // through a screen lock (Android exempts foreground services from
+      // Doze/battery suspension) — the same fine-grained distanceFilter
+      // keeps working in the background instead of needing a coarser
+      // interval-based fallback.
+      return AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 3,
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'Törn läuft',
+          notificationText: 'Standort wird aufgezeichnet',
+          enableWakeLock: true,
+        ),
+      );
+    }
+    return const LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 3,
     );
   }
 }

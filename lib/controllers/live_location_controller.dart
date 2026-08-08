@@ -106,6 +106,12 @@ class LiveLocationController extends ChangeNotifier {
     );
   }
 
+  // Android-only (no-op elsewhere): requests the separate "always" location
+  // tier needed to keep receiving fixes while the screen is locked. Call
+  // only after start() has already granted foreground access.
+  Future<bool> ensureBackgroundPermission() =>
+      _locationService.ensureBackgroundPermission();
+
   // Called both automatically on startup and from a manual tap on the
   // location button. The manual tap matters on mobile browsers, which
   // often only show the location permission prompt when triggered
