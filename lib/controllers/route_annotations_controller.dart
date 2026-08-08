@@ -74,7 +74,11 @@ class RouteAnnotationsController extends ChangeNotifier {
         from.longitude + (to.longitude - from.longitude) * t,
       );
 
-  Set<Marker> buildMarkers(List<LatLng> points, {required String idPrefix}) {
+  Set<Marker> buildMarkers(
+    List<LatLng> points, {
+    required String idPrefix,
+    bool showCourseLabels = true,
+  }) {
     final markers = <Marker>{};
     for (var i = 1; i < points.length; i++) {
       final from = points[i - 1];
@@ -91,15 +95,17 @@ class RouteAnnotationsController extends ChangeNotifier {
         ));
       }
 
-      final labelIcon = _courseLabelIcons[_courseLabelKey(from, to)];
-      if (labelIcon != null) {
-        markers.add(Marker(
-          markerId: MarkerId('${idPrefix}_course_$i'),
-          position: _lerp(from, to, 0.75),
-          icon: labelIcon,
-          anchor: const Offset(0.5, 0.5),
-          consumeTapEvents: true,
-        ));
+      if (showCourseLabels) {
+        final labelIcon = _courseLabelIcons[_courseLabelKey(from, to)];
+        if (labelIcon != null) {
+          markers.add(Marker(
+            markerId: MarkerId('${idPrefix}_course_$i'),
+            position: _lerp(from, to, 0.75),
+            icon: labelIcon,
+            anchor: const Offset(0.5, 0.5),
+            consumeTapEvents: true,
+          ));
+        }
       }
     }
 

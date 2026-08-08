@@ -45,9 +45,10 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   List<BoatRoute> _savedRoutes = [];
   bool _addingEnabled = true;
   bool _hasAutoCenteredOnLocation = false;
-  bool _hudTapGuard = false;
-  bool _showSeaMarks = false;
+  bool _mapTapGuard = false;
+  bool _showSeaMarks = true;
   bool _showDepth = false;
+  bool _showCourseAndDistance = true;
   String? _syncedForUid;
 
   final Map<String, BitmapDescriptor> _courseLabelIcons = {};
@@ -120,16 +121,21 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     }
   }
 
-  void _jumpToCurrentLocation() {
-    // On Flutter web the GoogleMap platform view can receive a tap directly
-    // (it isn't routed through Flutter's own widget hit-testing), so a tap
-    // meant for the HUD button can also reach the map underneath and add a
-    // route point. Guard the next map tap for a brief window rather than
-    // trying to geometrically detect the overlap, which proved unreliable.
-    _hudTapGuard = true;
+  // On Flutter web the GoogleMap platform view can receive a tap directly
+  // (it isn't routed through Flutter's own widget hit-testing), so a tap
+  // meant for the HUD button, or to dismiss a bottom sheet/dialog/marker
+  // info window, can also reach the map underneath and add a route point.
+  // Guard the next map tap for a brief window rather than trying to
+  // geometrically detect the overlap, which proved unreliable.
+  void _guardNextMapTap() {
+    _mapTapGuard = true;
     Future.delayed(const Duration(milliseconds: 400), () {
-      _hudTapGuard = false;
+      _mapTapGuard = false;
     });
+  }
+
+  void _jumpToCurrentLocation() {
+    _guardNextMapTap();
 
     final position = _location.currentPosition;
     if (position == null) {
@@ -143,7 +149,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   }
 
   void _addPoint(LatLng position) {
-    if (_hudTapGuard) return;
+    if (_mapTapGuard) return;
     setState(() {
       _points.add(position);
     });
@@ -198,7 +204,10 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       onSeaMarksChanged: (value) => setState(() => _showSeaMarks = value),
       showDepth: _showDepth,
       onDepthChanged: (value) => setState(() => _showDepth = value),
-    );
+      showCourseAndDistance: _showCourseAndDistance,
+      onCourseAndDistanceChanged: (value) =>
+          setState(() => _showCourseAndDistance = value),
+    ).then((_) => _guardNextMapTap());
   }
 
   // Route segment course labels ("123°" over "2.3 sm") are drawn as map
@@ -334,7 +343,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
             }
           },
           extraMarkers: {
-            ..._buildCourseLabelMarkers(),
+            if (_showCourseAndDistance) ..._buildCourseLabelMarkers(),
             if (_location.boatMarker case final marker?) marker,
           },
           showSeaMarks: _showSeaMarks,
@@ -441,7 +450,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   }
 
   void _showSavedRoutes() {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
@@ -462,6 +471,6 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
           ),
         ),
       ),
-    );
+    ).then((_) => _guardNextMapTap());
   }
 }

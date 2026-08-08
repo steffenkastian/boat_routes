@@ -51,11 +51,24 @@ class _ToursScreenState extends State<ToursScreen> {
   List<Tour> _savedTours = [];
   bool _isTracking = false;
   DateTime? _startedAt;
-  bool _showSeaMarks = false;
+  bool _showSeaMarks = true;
   bool _showDepth = false;
+  bool _showCourseAndDistance = true;
   String? _syncedForUid;
   MarkRoundingController? _markRounding;
   LatLng? _queriedPoint;
+  bool _mapTapGuard = false;
+
+  // On Flutter web the GoogleMap platform view can receive a tap directly
+  // (it isn't routed through Flutter's own widget hit-testing), so a tap
+  // meant to dismiss a bottom sheet/marker info window, or tap the HUD, can
+  // also reach the map underneath and set a new query point right there.
+  void _guardNextMapTap() {
+    _mapTapGuard = true;
+    Future.delayed(const Duration(milliseconds: 400), () {
+      _mapTapGuard = false;
+    });
+  }
 
   @override
   void initState() {
@@ -164,7 +177,17 @@ class _ToursScreenState extends State<ToursScreen> {
       _queriedPoint = null;
     });
     await WakelockPlus.disable();
-    if (points.isEmpty || startedAt == null || !mounted) return;
+    if (!mounted) return;
+    if (points.isEmpty || startedAt == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Keine Positionsdaten aufgezeichnet – Törn wurde nicht gespeichert.',
+          ),
+        ),
+      );
+      return;
+    }
 
     final options = await promptForSaveOptions(
       context,
@@ -232,6 +255,7 @@ class _ToursScreenState extends State<ToursScreen> {
   }
 
   void _handleTrackingTap(LatLng position) {
+    if (_mapTapGuard) return;
     setState(() => _queriedPoint = position);
   }
 
@@ -295,7 +319,10 @@ class _ToursScreenState extends State<ToursScreen> {
                     setState(() => _showSeaMarks = value),
                 showDepth: _showDepth,
                 onDepthChanged: (value) => setState(() => _showDepth = value),
-              ),
+                showCourseAndDistance: _showCourseAndDistance,
+                onCourseAndDistanceChanged: (value) =>
+                    setState(() => _showCourseAndDistance = value),
+              ).then((_) => _guardNextMapTap()),
             ),
           ],
         ),
@@ -312,6 +339,7 @@ class _ToursScreenState extends State<ToursScreen> {
                 ..._referenceAnnotations.buildMarkers(
                   widget.referenceRoute ?? const [],
                   idPrefix: 'reference',
+                  showCourseLabels: _showCourseAndDistance,
                 ),
                 if (_queriedPoint case final point?)
                   Marker(
@@ -320,6 +348,7 @@ class _ToursScreenState extends State<ToursScreen> {
                     icon: BitmapDescriptor.defaultMarkerWithHue(
                       BitmapDescriptor.hueViolet,
                     ),
+                    consumeTapEvents: true,
                   ),
               },
               referenceRoute: widget.referenceRoute,
@@ -331,6 +360,7 @@ class _ToursScreenState extends State<ToursScreen> {
               headingDegrees: _location.displayedHeading,
               statusMessage: _location.statusMessage,
               onTap: () {
+                _guardNextMapTap();
                 final position = _location.currentPosition;
                 if (position == null) return;
                 _mapController?.animateCamera(

@@ -50,6 +50,10 @@ class RouteMapView extends StatelessWidget {
           infoWindow: InfoWindow(title: 'Punkt ${idx + 1}'),
           icon: icon ?? BitmapDescriptor.defaultMarker,
           anchor: icon != null ? const Offset(0.5, 0.5) : const Offset(0.5, 1.0),
+          // Without this, a tap on the marker (or on the map to close its
+          // info window) can also reach the map's own onTap underneath and
+          // add a new point right on top of the one just tapped.
+          consumeTapEvents: true,
         );
       }));
     }
