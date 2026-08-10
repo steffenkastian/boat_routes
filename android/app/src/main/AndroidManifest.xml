@@ -11,6 +11,11 @@
     <!-- Required by ForegroundNotificationConfig.enableWakeLock, which keeps
          the CPU awake so fixes keep arriving while the screen is locked. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Required to actually display the "Törn läuft" foreground-service
+         notification on Android 13+ — without it granted at runtime, the
+         service still runs (tracking keeps working) but the notification is
+         silently never shown. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:label="boat_routes_web"
         android:name="${applicationName}"

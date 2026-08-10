@@ -37,6 +37,16 @@ class MarkRoundingController extends ChangeNotifier {
     return target == null ? null : distanceNm(position, target);
   }
 
+  // Distance from a live position to the current target plus every
+  // remaining leg after it — the full remaining length of the route, not
+  // just the next mark.
+  double? remainingDistanceNm(LatLng position) {
+    final target = currentTarget;
+    if (target == null) return null;
+    final remaining = marks.sublist(currentTargetIndex);
+    return distanceNm(position, target) + totalDistanceNm(remaining);
+  }
+
   double? bearingToTarget(LatLng position) {
     final target = currentTarget;
     return target == null ? null : bearing(position, target);

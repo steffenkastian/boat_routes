@@ -112,6 +112,12 @@ class LiveLocationController extends ChangeNotifier {
   Future<bool> ensureBackgroundPermission() =>
       _locationService.ensureBackgroundPermission();
 
+  // Android-only (no-op elsewhere): requests permission to actually show
+  // notifications, needed on Android 13+ for both the foreground-service
+  // notification and the separate live-distance one in tours_screen.dart.
+  Future<bool> ensureNotificationPermission() =>
+      _locationService.ensureNotificationPermission();
+
   // Called both automatically on startup and from a manual tap on the
   // location button. The manual tap matters on mobile browsers, which
   // often only show the location permission prompt when triggered

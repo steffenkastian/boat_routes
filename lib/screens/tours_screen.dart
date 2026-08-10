@@ -11,6 +11,7 @@ import '../models/tour.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/regatta_storage_service.dart';
+import '../services/tour_notification_service.dart';
 import '../services/tour_storage_service.dart';
 import '../services/user_library_service.dart';
 import '../utils/geo_utils.dart';
@@ -46,6 +47,8 @@ class _ToursScreenState extends State<ToursScreen> {
   final _location = LiveLocationController(LocationService());
   final _auth = AuthController(AuthService());
   final _referenceAnnotations = RouteAnnotationsController();
+  final _tourNotification = TourNotificationService();
+  DateTime? _lastNotificationUpdate;
 
   GoogleMapController? _mapController;
   List<Tour> _savedTours = [];
@@ -96,18 +99,40 @@ class _ToursScreenState extends State<ToursScreen> {
     _auth.dispose();
     _referenceAnnotations.removeListener(_onAnnotationsChanged);
     _referenceAnnotations.dispose();
-    if (_isTracking) WakelockPlus.disable();
+    if (_isTracking) {
+      WakelockPlus.disable();
+      _tourNotification.cancel();
+    }
     super.dispose();
   }
 
   void _onLocationChanged() {
     final position = _location.currentPosition;
     if (_isTracking && position != null) {
-      _markRounding?.updateWithPosition(
-        LatLng(position.latitude, position.longitude),
-      );
+      final here = LatLng(position.latitude, position.longitude);
+      _markRounding?.updateWithPosition(here);
+      _updateTourNotification(here);
     }
     setState(() {});
+  }
+
+  // Throttled to avoid re-posting on every single GPS fix (every few meters
+  // while sailing) — geolocator's own "Törn läuft" notification can't be
+  // updated after it starts, so this is a second, self-managed one just for
+  // the live distance readout.
+  void _updateTourNotification(LatLng here) {
+    final now = DateTime.now();
+    final last = _lastNotificationUpdate;
+    if (last != null && now.difference(last) < const Duration(seconds: 15)) {
+      return;
+    }
+    _lastNotificationUpdate = now;
+
+    final remaining = _markRounding?.remainingDistanceNm(here);
+    final text = remaining != null
+        ? 'Verbleibend: ${remaining.toStringAsFixed(1)} sm'
+        : 'Gefahren: ${totalDistanceNm(_location.track).toStringAsFixed(1)} sm';
+    _tourNotification.showProgress(text);
   }
   void _onAnnotationsChanged() => setState(() {});
 
@@ -152,17 +177,16 @@ class _ToursScreenState extends State<ToursScreen> {
           ? MarkRoundingController(route)
           : null;
     });
-    // Start the location request first, right on top of the button tap —
-    // some mobile browsers only show the permission prompt when the
-    // request is the very next thing to happen after a real user gesture,
-    // and awaiting something else (even the Wake Lock request below) first
-    // can consume that and leave the geolocation call hanging forever.
     _location.startRecording();
-    await _location.start();
+    _lastNotificationUpdate = null;
 
     // On Android this requests the separate "always" (background) location
-    // tier — a no-op everywhere else. Foreground tracking still works fine
-    // if it's denied, so this doesn't block on the result.
+    // tier — a no-op everywhere else — and has to happen *before*
+    // start() below: it shows a system permission dialog that briefly
+    // pauses the Activity, and doing that while start()'s fused-location
+    // request is still settling silently drops it, so no fixes ever
+    // arrive afterwards. Foreground tracking still works fine if this is
+    // denied, so it doesn't block on the result.
     if (!await _location.ensureBackgroundPermission() && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -172,6 +196,20 @@ class _ToursScreenState extends State<ToursScreen> {
         ),
       );
     }
+    // Same reasoning as above — requested before start() so the permission
+    // dialog can't interrupt the in-flight location request. Without this
+    // granted (Android 13+), the foreground-service notification and the
+    // live-distance one below both still get created but are never shown —
+    // tracking itself still works either way.
+    await _location.ensureNotificationPermission();
+
+    // Start the location request right after — some mobile browsers only
+    // show the permission prompt when the request is the very next thing
+    // to happen after a real user gesture, and awaiting something else
+    // (even the Wake Lock request below) first can consume that and leave
+    // the geolocation call hanging forever. ensureBackgroundPermission()
+    // above is a no-op on web, so it doesn't consume the gesture there.
+    await _location.start();
 
     // True background tracking (screen off, browser tab backgrounded) isn't
     // achievable for a web app — mobile browsers throttle/suspend
@@ -189,6 +227,7 @@ class _ToursScreenState extends State<ToursScreen> {
       _markRounding = null;
       _queriedPoint = null;
     });
+    await _tourNotification.cancel();
     await WakelockPlus.disable();
     if (!mounted) return;
     if (points.isEmpty || startedAt == null) {

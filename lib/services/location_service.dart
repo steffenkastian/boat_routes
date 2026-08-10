@@ -61,6 +61,17 @@ class LocationService {
     return status.isGranted;
   }
 
+  // Android 13+ requires this granted at runtime before any notification —
+  // including the foreground-service one above and the live distance one in
+  // tours_screen.dart — is actually shown; without it the service still
+  // runs, it just does so invisibly. No-op (and no such requirement)
+  // everywhere else.
+  Future<bool> ensureNotificationPermission() async {
+    if (!isAndroidPlatform) return true;
+    final status = await ph.Permission.notification.request();
+    return status.isGranted;
+  }
+
   Stream<Position> positionStream({LocationSettings? settings}) {
     return Geolocator.getPositionStream(
       locationSettings: settings ?? _defaultSettings(),

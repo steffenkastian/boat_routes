@@ -1,9 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart' as google_sign_in;
 
 class AuthService {
   final _auth = FirebaseAuth.instance;
   final _users = FirebaseFirestore.instance.collection('users');
+  bool _googleSignInInitialized = false;
 
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
@@ -22,8 +25,26 @@ class AuthService {
     await _auth.signInWithEmailAndPassword(email: email, password: password);
   }
 
+  // signInWithPopup only works on Flutter Web (it needs a browser window to
+  // pop up) — Android/iOS have no such concept and go through the native
+  // google_sign_in flow instead, exchanging its idToken for a Firebase
+  // credential.
   Future<void> signInWithGoogle() async {
-    final credential = await _auth.signInWithPopup(GoogleAuthProvider());
+    final UserCredential credential;
+    if (kIsWeb) {
+      credential = await _auth.signInWithPopup(GoogleAuthProvider());
+    } else {
+      final signIn = google_sign_in.GoogleSignIn.instance;
+      if (!_googleSignInInitialized) {
+        await signIn.initialize();
+        _googleSignInInitialized = true;
+      }
+      final account = await signIn.authenticate();
+      final idToken = account.authentication.idToken;
+      credential = await _auth.signInWithCredential(
+        GoogleAuthProvider.credential(idToken: idToken),
+      );
+    }
     final user = credential.user;
     if (user != null) await ensureUserProfile(user);
   }
