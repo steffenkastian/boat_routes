@@ -12,6 +12,7 @@ import '../services/tour_storage_service.dart';
 import '../services/user_library_service.dart';
 import '../utils/geo_utils.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/map_layers_menu.dart';
 import '../widgets/prompt_name_dialog.dart';
 import '../widgets/route_map_view.dart';
 import '../widgets/share_dialog.dart';
@@ -329,6 +330,9 @@ class _CombinedRouteMapScreen extends StatefulWidget {
 
 class _CombinedRouteMapScreenState extends State<_CombinedRouteMapScreen> {
   final _annotations = RouteAnnotationsController();
+  bool _showSeaMarks = true;
+  bool _showDepth = false;
+  bool _showCourseAndDistance = true;
 
   @override
   void initState() {
@@ -350,14 +354,38 @@ class _CombinedRouteMapScreenState extends State<_CombinedRouteMapScreen> {
   Widget build(BuildContext context) {
     final points = widget.points;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: [
+          IconButton(
+            tooltip: 'Kartenebenen',
+            icon: const Icon(Icons.layers),
+            onPressed: () => showMapLayersMenu(
+              context,
+              showSeaMarks: _showSeaMarks,
+              onSeaMarksChanged: (value) => setState(() => _showSeaMarks = value),
+              showDepth: _showDepth,
+              onDepthChanged: (value) => setState(() => _showDepth = value),
+              showCourseAndDistance: _showCourseAndDistance,
+              onCourseAndDistanceChanged: (value) =>
+                  setState(() => _showCourseAndDistance = value),
+            ),
+          ),
+        ],
+      ),
       body: RouteMapView(
         initialCamera: CameraPosition(target: points.first, zoom: 11),
         points: points,
         showPointMarkers: false,
+        showSeaMarks: _showSeaMarks,
+        showDepth: _showDepth,
         onTap: (_) {},
         onMapCreated: (_) {},
-        extraMarkers: _annotations.buildMarkers(points, idPrefix: 'folder'),
+        extraMarkers: _annotations.buildMarkers(
+          points,
+          idPrefix: 'folder',
+          showCourseLabels: _showCourseAndDistance,
+        ),
       ),
     );
   }
