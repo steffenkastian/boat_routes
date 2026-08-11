@@ -21,6 +21,7 @@ class AuthController extends ChangeNotifier {
   bool isAdmin = false;
   String? error;
   bool isBusy = false;
+  bool _disposed = false;
 
   Future<void> _onAuthChanged(User? user) async {
     currentUser = user;
@@ -29,6 +30,10 @@ class AuthController extends ChangeNotifier {
 
     if (user == null) return;
     isAdmin = await _authService.fetchIsAdmin(user.uid);
+    // fetchIsAdmin's Firestore read can still be in flight if whatever
+    // owns this controller gets disposed first (e.g. a widget-tree rebuild
+    // above MainShell, or hot restart) — notifying after dispose() throws.
+    if (_disposed) return;
     notifyListeners();
   }
 
@@ -44,7 +49,7 @@ class AuthController extends ChangeNotifier {
       error = 'Anmeldung fehlgeschlagen';
     } finally {
       isBusy = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
   }
 
@@ -60,6 +65,7 @@ class AuthController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _sub?.cancel();
     super.dispose();
   }

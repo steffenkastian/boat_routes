@@ -51,6 +51,17 @@ class LiveLocationController extends ChangeNotifier {
 
   bool isRecording = false;
   final List<LatLng> track = [];
+  bool _disposed = false;
+
+  // start() has long async gaps (a 10s permission timeout, an 800ms
+  // MissingPluginException retry delay, an ongoing position-stream
+  // subscription, a 10s fix-timeout Timer) each followed by
+  // notifyListeners() — if whichever screen owns this controller is
+  // disposed while one of those is in flight, calling that after dispose()
+  // throws.
+  void _safeNotify() {
+    if (!_disposed) notifyListeners();
+  }
 
   double? get speedKnots =>
       currentPosition != null ? metersPerSecondToKnots(currentPosition!.speed) : null;
@@ -83,7 +94,7 @@ class LiveLocationController extends ChangeNotifier {
     final icon = await buildBoatArrowIcon(rotationDegrees: bucket.toDouble());
     _boatIconsByHeading[bucket] = icon;
     _pendingBoatIconBuckets.remove(bucket);
-    notifyListeners();
+    _safeNotify();
   }
 
   Marker? get boatMarker {
@@ -130,11 +141,25 @@ class LiveLocationController extends ChangeNotifier {
   // indefinitely instead of resolving or throwing — without this, that
   // shows up as "GPS wird gesucht…" forever with no way to tell what went
   // wrong.
-  Future<void> start({bool isRetry = false}) async {
+  //
+  // [background] is forwarded to LocationService.positionStream() — pass
+  // true only when actually recording a Törn (see tours_screen.dart),
+  // never for a plain "show my position" call, since on Android it starts
+  // a foreground service with a persistent notification.
+  Future<void> start({bool isRetry = false, bool background = false}) async {
     await _positionSub?.cancel();
     _fixTimeoutTimer?.cancel();
     streamError = null;
-    notifyListeners();
+    // Reset rather than carried over from any previous stream: comparing a
+    // fix from a brand new subscription (e.g. tours_screen.dart restarting
+    // into/out of foreground-service mode) against one from the old one can
+    // have a tiny elapsed time between two otherwise-normal fixes, which
+    // the outlier speed check in the listener below misreads as an
+    // implausible jump and silently drops — showing a false "no GPS" error
+    // right as tracking starts.
+    _lastFixForHeading = null;
+    _lastFixTime = null;
+    _safeNotify();
 
     final LocationAccessStatus result;
     try {
@@ -144,7 +169,7 @@ class LiveLocationController extends ChangeNotifier {
     } on TimeoutException {
       streamError =
           'Standortabfrage antwortet nicht – Standortberechtigung für diese Seite in den Browser-Einstellungen prüfen.';
-      notifyListeners();
+      _safeNotify();
       return;
     } on MissingPluginException {
       // The web plugin implementation can occasionally not be registered
@@ -156,33 +181,34 @@ class LiveLocationController extends ChangeNotifier {
         // implementation ever got registered at all.
         streamError =
             'Standort-Plugin konnte nicht geladen werden (aktiv: ${geo.GeolocatorPlatform.instance.runtimeType})';
-        notifyListeners();
+        _safeNotify();
         return;
       }
       await Future.delayed(const Duration(milliseconds: 800));
-      return start(isRetry: true);
+      return start(isRetry: true, background: background);
     } catch (e) {
       // Temporarily surfacing the raw error text (instead of a generic
       // message) to diagnose an unexpected failure on some mobile browsers.
       streamError = 'Standortfehler: $e';
-      notifyListeners();
+      _safeNotify();
       return;
     }
 
     status = result;
-    notifyListeners();
+    _safeNotify();
     if (result != LocationAccessStatus.granted) return;
 
     _fixTimeoutTimer = Timer(const Duration(seconds: 10), () {
       if (currentPosition == null) {
         streamError =
             'Keine GPS-Daten empfangen – Standortdienste am Gerät prüfen.';
-        notifyListeners();
+        _safeNotify();
       }
     });
 
     try {
-      _positionSub = _locationService.positionStream().listen(
+      _positionSub =
+          _locationService.positionStream(background: background).listen(
         (position) {
           _fixTimeoutTimer?.cancel();
           final fix = LatLng(position.latitude, position.longitude);
@@ -211,16 +237,16 @@ class LiveLocationController extends ChangeNotifier {
           _lastFixForHeading = fix;
           _lastFixTime = position.timestamp;
           if (isRecording) track.add(fix);
-          notifyListeners();
+          _safeNotify();
         },
         onError: (Object error) {
           streamError = 'Standort nicht verfügbar';
-          notifyListeners();
+          _safeNotify();
         },
       );
     } catch (_) {
       streamError = 'Standort-Stream konnte nicht gestartet werden';
-      notifyListeners();
+      _safeNotify();
     }
   }
 
@@ -231,18 +257,19 @@ class LiveLocationController extends ChangeNotifier {
     if (position != null) {
       track.add(LatLng(position.latitude, position.longitude));
     }
-    notifyListeners();
+    _safeNotify();
   }
 
   List<LatLng> stopRecording() {
     isRecording = false;
     final result = List<LatLng>.of(track);
-    notifyListeners();
+    _safeNotify();
     return result;
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _positionSub?.cancel();
     _fixTimeoutTimer?.cancel();
     super.dispose();

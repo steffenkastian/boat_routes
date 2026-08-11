@@ -34,6 +34,11 @@ class TourStorageService {
     final raw = prefs.getStringList(_prefsKey) ?? [];
     final tour = Tour.fromJson(jsonDecode(raw[index]) as Map<String, dynamic>);
     final renamed = Tour(
+      // Without this, the id ?? generateLocalId() fallback in Tour's
+      // constructor mints a fresh id on every rename, leaving the copy
+      // persisted here out of sync with whatever id is still held in
+      // memory (tours_screen.dart) or already uploaded to the cloud.
+      id: tour.id,
       name: newName,
       points: tour.points,
       startedAt: tour.startedAt,

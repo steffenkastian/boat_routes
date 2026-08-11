@@ -15,15 +15,19 @@ class UserLibraryService {
   CollectionReference<Map<String, dynamic>> _tours(String uid) =>
       FirebaseFirestore.instance.collection('users').doc(uid).collection('tours');
 
+  // Written under the route/tour's own locally-generated id (not
+  // Firestore's auto-id via .add()) so the same id addresses it in local
+  // storage, Firestore, and any share of it.
   Future<void> addRoute(String uid, BoatRoute route) =>
-      _routes(uid).add(route.toJson());
+      _routes(uid).doc(route.id).set(route.toJson());
 
   Future<List<BoatRoute>> loadRoutes(String uid) async {
     final snapshot = await _routes(uid).get();
     return snapshot.docs.map((doc) => BoatRoute.fromJson(doc.data())).toList();
   }
 
-  Future<void> addTour(String uid, Tour tour) => _tours(uid).add(tour.toJson());
+  Future<void> addTour(String uid, Tour tour) =>
+      _tours(uid).doc(tour.id).set(tour.toJson());
 
   Future<List<Tour>> loadTours(String uid) async {
     final snapshot = await _tours(uid).get();

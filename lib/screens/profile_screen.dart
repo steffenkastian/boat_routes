@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../controllers/auth_controller.dart';
+import '../models/shared_item.dart';
 import '../services/auth_service.dart';
+import '../services/share_service.dart';
+import 'shared_item_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -12,13 +15,17 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final _auth = AuthController(AuthService());
+  final _shareService = ShareService();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  String? _sharedWithMeForEmail;
+  List<SharedItem>? _sharedWithMe;
 
   @override
   void initState() {
     super.initState();
     _auth.addListener(_onAuthChanged);
+    _loadSharedWithMe();
   }
 
   @override
@@ -30,7 +37,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  void _onAuthChanged() => setState(() {});
+  void _onAuthChanged() {
+    setState(() {});
+    _loadSharedWithMe();
+  }
+
+  Future<void> _loadSharedWithMe() async {
+    final email = _auth.currentUser?.email;
+    if (email == null) {
+      setState(() {
+        _sharedWithMe = null;
+        _sharedWithMeForEmail = null;
+      });
+      return;
+    }
+    // Guards against a stale response landing after the account switched.
+    if (email == _sharedWithMeForEmail) return;
+    _sharedWithMeForEmail = email;
+    List<SharedItem> items;
+    try {
+      items = await _shareService.loadSharedWithMe(email);
+    } catch (_) {
+      // Un-marks this email so the next auth-change/rebuild can retry —
+      // otherwise a single transient failure (or a rules mismatch) would
+      // leave "Mit dir geteilt" permanently empty for the rest of the
+      // session with no way to recover short of signing out and back in.
+      if (_sharedWithMeForEmail == email) _sharedWithMeForEmail = null;
+      return;
+    }
+    if (!mounted || email != _auth.currentUser?.email) return;
+    setState(() => _sharedWithMe = items);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,8 +82,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildSignedIn() {
     final user = _auth.currentUser!;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final sharedWithMe = _sharedWithMe;
+    return ListView(
       children: [
         Text('Angemeldet als', style: Theme.of(context).textTheme.bodySmall),
         Text(user.email ?? user.uid, style: Theme.of(context).textTheme.titleMedium),
@@ -60,6 +97,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onPressed: _auth.isBusy ? null : _auth.signOut,
           child: const Text('Abmelden'),
         ),
+        if (sharedWithMe != null && sharedWithMe.isNotEmpty) ...[
+          const SizedBox(height: 32),
+          Text('Mit dir geteilt', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          ...sharedWithMe.map(
+            (item) => ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                item.type == SharedItemType.route
+                    ? Icons.directions_boat
+                    : Icons.route,
+              ),
+              title: Text(item.name),
+              subtitle: Text('von ${item.ownerEmail}'),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SharedItemScreen(item: item),
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

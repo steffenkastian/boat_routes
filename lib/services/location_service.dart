@@ -72,14 +72,23 @@ class LocationService {
     return status.isGranted;
   }
 
-  Stream<Position> positionStream({LocationSettings? settings}) {
+  // [background] switches Android to a real foreground service (exempt from
+  // Doze/battery suspension, but only justified — and only shows its
+  // persistent notification — while a Törn is actually being recorded).
+  // Plain "show my current position" use (Route planen, and the Törns
+  // screen before a Törn is started) stays in normal mode: no service, no
+  // notification, since nothing needs to survive a screen lock there.
+  Stream<Position> positionStream({
+    LocationSettings? settings,
+    bool background = false,
+  }) {
     return Geolocator.getPositionStream(
-      locationSettings: settings ?? _defaultSettings(),
+      locationSettings: settings ?? _defaultSettings(background: background),
     );
   }
 
-  LocationSettings _defaultSettings() {
-    if (isAndroidPlatform) {
+  LocationSettings _defaultSettings({bool background = false}) {
+    if (isAndroidPlatform && background) {
       // A foregroundNotificationConfig makes geolocator_android run a real
       // foreground service, which is what actually sustains these updates
       // through a screen lock (Android exempts foreground services from

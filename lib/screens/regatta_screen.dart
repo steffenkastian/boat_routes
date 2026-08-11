@@ -33,6 +33,7 @@ class _RegattaScreenState extends State<RegattaScreen> {
 
     setState(() => _isSearching = true);
     final results = await _storage.searchByPlz(plz);
+    if (!mounted) return;
     setState(() {
       _results = results;
       _isSearching = false;

@@ -31,6 +31,39 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // A shared route/Törn: either a public link (sharedWithEmail unset —
+    // anyone with the id can read, no login needed) or addressed to one
+    // specific signed-in email address (only that account's own token can
+    // read it; Firebase's email claim is only reliable for identifying
+    // *an* account, not proof the recipient owns that mailbox, since this
+    // app doesn't enforce email verification — acceptable for sharing, not
+    // suitable for anything more sensitive). Only the owner can create,
+    // and only under their own uid; nothing is ever mutated after
+    // creation, and only the owner can remove it.
+    match /shared_items/{shareId} {
+      // ownerEmail is only ever shown to recipients as "shared by X" — this
+      // still pins it to the actual signed-in account's own email (rather
+      // than leaving it client-chosen) so it can't be spoofed to impersonate
+      // someone else.
+      allow create: if request.auth != null
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.ownerEmail == request.auth.token.email
+                    && (request.resource.data.sharedWithEmail == null
+                        || request.resource.data.sharedWithEmail is string);
+      // .lower() on both sides: sharedWithEmail is written already
+      // lowercased (see ShareService), but request.auth.token.email isn't
+      // guaranteed to be — without normalizing here too, an account with
+      // any uppercase in its email would never match its own shares.
+      allow read: if resource.data.sharedWithEmail == null
+                  || (request.auth != null
+                      && request.auth.uid == resource.data.ownerUid)
+                  || (request.auth != null
+                      && request.auth.token.email.lower() == resource.data.sharedWithEmail);
+      allow update: if false;
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.ownerUid;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

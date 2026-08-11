@@ -22,12 +22,23 @@ class RouteAnnotationsController extends ChangeNotifier {
   final Map<int, BitmapDescriptor> _arrowIconsByHeading = {};
   BitmapDescriptor? _startIcon;
   BitmapDescriptor? _finishIcon;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 
   Future<void> _init() async {
     final results = await Future.wait([
       buildLabelIcon('Start', background: const Color(0xCC2E7D32)),
       buildLabelIcon('Finish', background: const Color(0xCCC62828)),
     ]);
+    // The icon-baking above can still be in flight when a screen holding
+    // this controller is popped quickly (e.g. opening then immediately
+    // leaving a tour's detail view) — notifying after dispose() throws.
+    if (_disposed) return;
     _startIcon = results[0];
     _finishIcon = results[1];
     notifyListeners();
@@ -66,6 +77,7 @@ class RouteAnnotationsController extends ChangeNotifier {
         rotationDegrees: heading.toDouble(),
       );
     }
+    if (_disposed) return;
     notifyListeners();
   }
 

@@ -9,15 +9,18 @@ import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/regatta_storage_service.dart';
 import '../services/route_storage_service.dart';
+import '../services/share_service.dart';
 import '../services/user_library_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/marker_icon_factory.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/hud_overlay.dart';
 import '../widgets/map_layers_menu.dart';
 import '../widgets/route_map_view.dart';
 import '../widgets/route_points_panel.dart';
 import '../widgets/save_options_dialog.dart';
 import '../widgets/saved_routes_panel.dart';
+import '../widgets/share_dialog.dart';
 
 class RoutePlannerScreen extends StatefulWidget {
   const RoutePlannerScreen({required this.onStartTour, super.key});
@@ -37,6 +40,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   final _routeStorage = RouteStorageService();
   final _regattaStorage = RegattaStorageService();
   final _userLibrary = UserLibraryService();
+  final _shareService = ShareService();
   final _location = LiveLocationController(LocationService());
   final _auth = AuthController(AuthService());
 
@@ -50,6 +54,12 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   bool _showDepth = false;
   bool _showCourseAndDistance = true;
   String? _syncedForUid;
+  // Awaited by _syncRoutesOnLogin() before it looks at _savedRoutes — the
+  // initial SharedPreferences load and the Firebase auth-state event race
+  // each other with no guaranteed order, so without this a login arriving
+  // first would compute "local-only routes" against a still-empty list and
+  // never re-check once the load actually finishes.
+  late final Future<void> _initialLoadRoutes;
 
   final Map<String, BitmapDescriptor> _courseLabelIcons = {};
   final Map<int, BitmapDescriptor> _pointNumberIcons = {};
@@ -57,7 +67,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   @override
   void initState() {
     super.initState();
-    _loadRoutes();
+    _initialLoadRoutes = _loadRoutes();
     _location.addListener(_onLocationChanged);
     _location.start();
     _auth.addListener(_onAuthChanged);
@@ -76,7 +86,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     final uid = _auth.currentUser?.uid;
     if (uid != null && uid != _syncedForUid) {
       _syncedForUid = uid;
-      _mergeCloudRoutes(uid);
+      _syncRoutesOnLogin(uid);
     } else if (uid == null) {
       _syncedForUid = null;
     }
@@ -85,18 +95,66 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
   // Merges in routes saved to this account from any device — local storage
   // stays authoritative for offline/logged-out use, this just adds what
-  // isn't already present (matched by name + save time).
-  Future<void> _mergeCloudRoutes(String uid) async {
+  // isn't already present (matched by name + save time). Then offers to
+  // push the other direction: routes that were only ever saved locally
+  // (e.g. created before this login, or while logged out) aren't uploaded
+  // automatically, since that's a one-way action the user should confirm.
+  Future<void> _syncRoutesOnLogin(String uid) async {
+    // Must resolve before touching _savedRoutes: this and the initial
+    // SharedPreferences load race each other with no guaranteed order.
+    await _initialLoadRoutes;
+    if (!mounted) return;
+
     final cloudRoutes = await _userLibrary.loadRoutes(uid);
     if (!mounted) return;
-    setState(() {
-      for (final route in cloudRoutes) {
-        final alreadyPresent = _savedRoutes.any(
-          (r) => r.name == route.name && r.createdAt == route.createdAt,
-        );
-        if (!alreadyPresent) _savedRoutes.add(route);
+
+    bool sameRoute(BoatRoute a, BoatRoute b) =>
+        a.name == b.name && a.createdAt == b.createdAt;
+
+    final newFromCloud = cloudRoutes
+        .where((route) => !_savedRoutes.any((r) => sameRoute(r, route)))
+        .toList();
+    if (newFromCloud.isNotEmpty) {
+      setState(() => _savedRoutes.addAll(newFromCloud));
+      // Without this, these entries would only exist in _savedRoutes —
+      // deleteRouteAt() indexes into the SharedPreferences list, which
+      // would then be shorter and throw RangeError the moment one of
+      // these merged-in routes is deleted.
+      for (final route in newFromCloud) {
+        await _routeStorage.addRoute(route);
       }
-    });
+    }
+
+    final localOnly = _savedRoutes
+        .where((r) => !cloudRoutes.any((c) => sameRoute(c, r)))
+        .toList();
+    if (localOnly.isEmpty || !mounted) return;
+
+    final confirmed = await confirmDialog(
+      context,
+      title: 'Lokale Routen übernehmen?',
+      message: localOnly.length == 1
+          ? 'Du hast 1 lokal gespeicherte Route, die noch nicht in deinem Account ist. Soll sie übernommen werden?'
+          : 'Du hast ${localOnly.length} lokal gespeicherte Routen, die noch nicht in deinem Account sind. Sollen sie übernommen werden?',
+      confirmLabel: 'Übernehmen',
+    );
+    if (!confirmed) return;
+
+    var failures = 0;
+    for (final route in localOnly) {
+      try {
+        await _userLibrary.addRoute(uid, route);
+      } catch (_) {
+        failures++;
+      }
+    }
+    if (!mounted || failures == 0) return;
+    final message = failures == 1
+        ? '1 Route konnte nicht übernommen werden.'
+        : '$failures Routen konnten nicht übernommen werden.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   void _onLocationChanged() {
@@ -258,6 +316,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
   Future<void> _loadRoutes() async {
     final routes = await _routeStorage.loadRoutes();
+    if (!mounted) return;
     setState(() {
       _savedRoutes = routes;
     });
@@ -467,10 +526,30 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
                 _deleteRoute(index);
                 setSheetState(() {});
               },
+              onShare: _shareRoute,
             ),
           ),
         ),
       ),
     ).then((_) => _guardNextMapTap());
+  }
+
+  Future<void> _shareRoute(BoatRoute route) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Zum Teilen bitte zuerst einloggen.')),
+      );
+      return;
+    }
+    await showShareDialog(
+      context,
+      createShare: ({String? email}) => _shareService.shareRoute(
+        route,
+        ownerUid: user.uid,
+        ownerEmail: user.email ?? '',
+        sharedWithEmail: email,
+      ),
+    );
   }
 }

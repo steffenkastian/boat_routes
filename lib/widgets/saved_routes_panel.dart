@@ -8,12 +8,14 @@ class SavedRoutesPanel extends StatelessWidget {
     required this.routes,
     required this.onLoad,
     required this.onDelete,
+    required this.onShare,
     super.key,
   });
 
   final List<BoatRoute> routes;
   final ValueChanged<BoatRoute> onLoad;
   final ValueChanged<int> onDelete;
+  final ValueChanged<BoatRoute> onShare;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +36,10 @@ class SavedRoutesPanel extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.play_arrow, color: Colors.green),
                 onPressed: () => onLoad(route),
+              ),
+              IconButton(
+                icon: const Icon(Icons.share),
+                onPressed: () => onShare(route),
               ),
               IconButton(
                 icon: const Icon(Icons.delete, color: Colors.red),

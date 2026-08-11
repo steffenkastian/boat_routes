@@ -11,6 +11,7 @@ import '../models/tour.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/regatta_storage_service.dart';
+import '../services/share_service.dart';
 import '../services/tour_notification_service.dart';
 import '../services/tour_storage_service.dart';
 import '../services/user_library_service.dart';
@@ -21,6 +22,7 @@ import '../widgets/map_layers_menu.dart';
 import '../widgets/prompt_name_dialog.dart';
 import '../widgets/route_map_view.dart';
 import '../widgets/save_options_dialog.dart';
+import '../widgets/share_dialog.dart';
 import 'tour_detail_screen.dart';
 
 class ToursScreen extends StatefulWidget {
@@ -44,6 +46,7 @@ class _ToursScreenState extends State<ToursScreen> {
   final _tourStorage = TourStorageService();
   final _regattaStorage = RegattaStorageService();
   final _userLibrary = UserLibraryService();
+  final _shareService = ShareService();
   final _location = LiveLocationController(LocationService());
   final _auth = AuthController(AuthService());
   final _referenceAnnotations = RouteAnnotationsController();
@@ -58,6 +61,12 @@ class _ToursScreenState extends State<ToursScreen> {
   bool _showDepth = false;
   bool _showCourseAndDistance = true;
   String? _syncedForUid;
+  // Awaited by _syncToursOnLogin() before it looks at _savedTours — the
+  // initial SharedPreferences load and the Firebase auth-state event race
+  // each other with no guaranteed order, so without this a login arriving
+  // first would compute "local-only Törns" against a still-empty list and
+  // never re-check once the load actually finishes.
+  late final Future<void> _initialLoadTours;
   MarkRoundingController? _markRounding;
   LatLng? _queriedPoint;
   bool _mapTapGuard = false;
@@ -76,8 +85,15 @@ class _ToursScreenState extends State<ToursScreen> {
   @override
   void initState() {
     super.initState();
-    _loadTours();
+    _initialLoadTours = _loadTours();
     _location.addListener(_onLocationChanged);
+    // Started here rather than only in _startTour(): a GPS/fused-location
+    // fix can take the better part of a minute to acquire from a cold
+    // start (unlike the fast network-based fix Route planen gets), so
+    // starting it the moment this screen opens gives it time to be ready
+    // by the time "Törn starten" is actually tapped, instead of starting
+    // that wait only then.
+    _location.start();
     _auth.addListener(_onAuthChanged);
     _referenceAnnotations.addListener(_onAnnotationsChanged);
     _referenceAnnotations.ensureIconsFor(widget.referenceRoute ?? const []);
@@ -140,7 +156,7 @@ class _ToursScreenState extends State<ToursScreen> {
     final uid = _auth.currentUser?.uid;
     if (uid != null && uid != _syncedForUid) {
       _syncedForUid = uid;
-      _mergeCloudTours(uid);
+      _syncToursOnLogin(uid);
     } else if (uid == null) {
       _syncedForUid = null;
     }
@@ -150,20 +166,70 @@ class _ToursScreenState extends State<ToursScreen> {
   // Merges in Törns saved to this account from any device — local storage
   // stays authoritative for offline/logged-out use, this just adds what
   // isn't already present (matched by start time, which is unique per Törn).
-  Future<void> _mergeCloudTours(String uid) async {
+  // Then offers to push the other direction: Törns that were only ever
+  // saved locally (e.g. recorded before this login, or while logged out)
+  // aren't uploaded automatically, since that's a one-way action the user
+  // should confirm.
+  Future<void> _syncToursOnLogin(String uid) async {
+    // Must resolve before touching _savedTours: this and the initial
+    // SharedPreferences load race each other with no guaranteed order.
+    await _initialLoadTours;
+    if (!mounted) return;
+
     final cloudTours = await _userLibrary.loadTours(uid);
     if (!mounted) return;
-    setState(() {
-      for (final tour in cloudTours) {
-        final alreadyPresent =
-            _savedTours.any((t) => t.startedAt == tour.startedAt);
-        if (!alreadyPresent) _savedTours.add(tour);
+
+    bool sameTour(Tour a, Tour b) => a.startedAt == b.startedAt;
+
+    final newFromCloud = cloudTours
+        .where((tour) => !_savedTours.any((t) => sameTour(t, tour)))
+        .toList();
+    if (newFromCloud.isNotEmpty) {
+      setState(() => _savedTours.addAll(newFromCloud));
+      // Without this, these entries would only exist in _savedTours —
+      // renameTourAt()/deleteTourAt() index into the SharedPreferences
+      // list, which would then be shorter and throw RangeError the moment
+      // one of these merged-in Törns is renamed or deleted.
+      for (final tour in newFromCloud) {
+        await _tourStorage.addTour(tour);
       }
-    });
+    }
+
+    final localOnly = _savedTours
+        .where((t) => !cloudTours.any((c) => sameTour(c, t)))
+        .toList();
+    if (localOnly.isEmpty || !mounted) return;
+
+    final confirmed = await confirmDialog(
+      context,
+      title: 'Lokale Törns übernehmen?',
+      message: localOnly.length == 1
+          ? 'Du hast 1 lokal gespeicherten Törn, der noch nicht in deinem Account ist. Soll er übernommen werden?'
+          : 'Du hast ${localOnly.length} lokal gespeicherte Törns, die noch nicht in deinem Account sind. Sollen sie übernommen werden?',
+      confirmLabel: 'Übernehmen',
+    );
+    if (!confirmed) return;
+
+    var failures = 0;
+    for (final tour in localOnly) {
+      try {
+        await _userLibrary.addTour(uid, tour);
+      } catch (_) {
+        failures++;
+      }
+    }
+    if (!mounted || failures == 0) return;
+    final message = failures == 1
+        ? '1 Törn konnte nicht übernommen werden.'
+        : '$failures Törns konnten nicht übernommen werden.';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   Future<void> _loadTours() async {
     final tours = await _tourStorage.loadTours();
+    if (!mounted) return;
     setState(() => _savedTours = tours);
   }
 
@@ -203,13 +269,15 @@ class _ToursScreenState extends State<ToursScreen> {
     // tracking itself still works either way.
     await _location.ensureNotificationPermission();
 
-    // Start the location request right after — some mobile browsers only
-    // show the permission prompt when the request is the very next thing
-    // to happen after a real user gesture, and awaiting something else
-    // (even the Wake Lock request below) first can consume that and leave
-    // the geolocation call hanging forever. ensureBackgroundPermission()
-    // above is a no-op on web, so it doesn't consume the gesture there.
-    await _location.start();
+    // Upgrades to Android's foreground-service mode now that a Törn is
+    // actually being tracked — this is what shows the "Törn läuft"
+    // notification and survives a screen lock, unlike the plain stream
+    // that's been running since initState() (which pre-warms the GPS lock
+    // without a service/notification). Restarting the stream here doesn't
+    // repeat the up-to-a-minute cold-start wait: the underlying GPS/GNSS
+    // receiver stays warm across the restart, only the Dart-level
+    // subscription is new.
+    await _location.start(background: true);
 
     // True background tracking (screen off, browser tab backgrounded) isn't
     // achievable for a web app — mobile browsers throttle/suspend
@@ -228,6 +296,10 @@ class _ToursScreenState extends State<ToursScreen> {
       _queriedPoint = null;
     });
     await _tourNotification.cancel();
+    // Downgrades back out of foreground-service mode — otherwise the
+    // "Törn läuft" notification and background service would keep running
+    // indefinitely after tracking has actually stopped.
+    await _location.start();
     await WakelockPlus.disable();
     if (!mounted) return;
     if (points.isEmpty || startedAt == null) {
@@ -273,6 +345,25 @@ class _ToursScreenState extends State<ToursScreen> {
     }
   }
 
+  Future<void> _shareTour(Tour tour) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Zum Teilen bitte zuerst einloggen.')),
+      );
+      return;
+    }
+    await showShareDialog(
+      context,
+      createShare: ({String? email}) => _shareService.shareTour(
+        tour,
+        ownerUid: user.uid,
+        ownerEmail: user.email ?? '',
+        sharedWithEmail: email,
+      ),
+    );
+  }
+
   Future<void> _deleteTour(int index) async {
     final tour = _savedTours[index];
     final confirmed = await confirmDialog(
@@ -296,14 +387,29 @@ class _ToursScreenState extends State<ToursScreen> {
     if (newName == null) return;
 
     await _tourStorage.renameTourAt(index, newName);
-    setState(() {
-      _savedTours[index] = Tour(
-        name: newName,
-        points: tour.points,
-        startedAt: tour.startedAt,
-        endedAt: tour.endedAt,
-      );
-    });
+    final renamed = Tour(
+      // Without this, renaming would mint a fresh id on every rename
+      // (the id ?? generateLocalId() fallback in Tour's constructor),
+      // breaking any existing share link/cloud copy tied to the old one.
+      id: tour.id,
+      name: newName,
+      points: tour.points,
+      startedAt: tour.startedAt,
+      endedAt: tour.endedAt,
+    );
+    setState(() => _savedTours[index] = renamed);
+
+    // Re-upload under the same id (an upsert — see UserLibraryService) so
+    // the cloud copy, and any other device signed into this account,
+    // picks up the new name too. Without this, sameTour()'s startedAt-only
+    // match in _syncToursOnLogin would keep treating the stale cloud copy
+    // as already present and never correct it.
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      try {
+        await _userLibrary.addTour(uid, renamed);
+      } catch (_) {}
+    }
   }
 
   void _handleTrackingTap(LatLng position) {
@@ -538,6 +644,11 @@ class _ToursScreenState extends State<ToursScreen> {
                                 tooltip: 'Route ansehen',
                                 icon: const Icon(Icons.map),
                                 onPressed: () => _viewTour(tour),
+                              ),
+                              IconButton(
+                                tooltip: 'Teilen',
+                                icon: const Icon(Icons.share),
+                                onPressed: () => _shareTour(tour),
                               ),
                               IconButton(
                                 tooltip: 'Umbenennen',
