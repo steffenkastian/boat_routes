@@ -8,10 +8,12 @@ import '../controllers/mark_rounding_controller.dart';
 import '../controllers/route_annotations_controller.dart';
 import '../models/regatta.dart';
 import '../models/tour.dart';
+import '../models/tour_folder.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/regatta_storage_service.dart';
 import '../services/share_service.dart';
+import '../services/tour_folder_storage_service.dart';
 import '../services/tour_notification_service.dart';
 import '../services/tour_storage_service.dart';
 import '../services/user_library_service.dart';
@@ -24,6 +26,7 @@ import '../widgets/route_map_view.dart';
 import '../widgets/save_options_dialog.dart';
 import '../widgets/share_dialog.dart';
 import 'tour_detail_screen.dart';
+import 'tour_folder_detail_screen.dart';
 
 class ToursScreen extends StatefulWidget {
   const ToursScreen({this.referenceRoute, this.referenceRouteLabel, super.key});
@@ -44,6 +47,7 @@ class _ToursScreenState extends State<ToursScreen> {
   );
 
   final _tourStorage = TourStorageService();
+  final _folderStorage = TourFolderStorageService();
   final _regattaStorage = RegattaStorageService();
   final _userLibrary = UserLibraryService();
   final _shareService = ShareService();
@@ -55,6 +59,7 @@ class _ToursScreenState extends State<ToursScreen> {
 
   GoogleMapController? _mapController;
   List<Tour> _savedTours = [];
+  List<TourFolder> _savedFolders = [];
   bool _isTracking = false;
   DateTime? _startedAt;
   bool _showSeaMarks = true;
@@ -67,6 +72,7 @@ class _ToursScreenState extends State<ToursScreen> {
   // first would compute "local-only Törns" against a still-empty list and
   // never re-check once the load actually finishes.
   late final Future<void> _initialLoadTours;
+  late final Future<void> _initialLoadFolders;
   MarkRoundingController? _markRounding;
   LatLng? _queriedPoint;
   bool _mapTapGuard = false;
@@ -86,6 +92,7 @@ class _ToursScreenState extends State<ToursScreen> {
   void initState() {
     super.initState();
     _initialLoadTours = _loadTours();
+    _initialLoadFolders = _loadFolders();
     _location.addListener(_onLocationChanged);
     // Started here rather than only in _startTour(): a GPS/fused-location
     // fix can take the better part of a minute to acquire from a cold
@@ -157,10 +164,100 @@ class _ToursScreenState extends State<ToursScreen> {
     if (uid != null && uid != _syncedForUid) {
       _syncedForUid = uid;
       _syncToursOnLogin(uid);
+      _syncFoldersOnLogin(uid);
     } else if (uid == null) {
       _syncedForUid = null;
     }
     setState(() {});
+  }
+
+  Future<void> _loadFolders() async {
+    final folders = await _folderStorage.loadFolders();
+    if (!mounted) return;
+    setState(() => _savedFolders = folders);
+  }
+
+  // Same shape as _syncToursOnLogin, matched by id instead — folders don't
+  // have a natural "same content" key like a Törn's start time, but their
+  // id is already stable from creation (see TourFolder), so identity is
+  // simpler and just as correct here.
+  Future<void> _syncFoldersOnLogin(String uid) async {
+    await _initialLoadFolders;
+    if (!mounted) return;
+
+    final cloudFolders = await _userLibrary.loadFolders(uid);
+    if (!mounted) return;
+
+    final newFromCloud = cloudFolders
+        .where((f) => !_savedFolders.any((sf) => sf.id == f.id))
+        .toList();
+    if (newFromCloud.isNotEmpty) {
+      setState(() => _savedFolders.addAll(newFromCloud));
+      for (final folder in newFromCloud) {
+        await _folderStorage.addFolder(folder);
+      }
+    }
+
+    final localOnly = _savedFolders
+        .where((f) => !cloudFolders.any((cf) => cf.id == f.id))
+        .toList();
+    if (localOnly.isEmpty || !mounted) return;
+
+    final confirmed = await confirmDialog(
+      context,
+      title: 'Lokale Ordner übernehmen?',
+      message: localOnly.length == 1
+          ? 'Du hast 1 lokal gespeicherten Ordner, der noch nicht in deinem Account ist. Soll er übernommen werden?'
+          : 'Du hast ${localOnly.length} lokal gespeicherte Ordner, die noch nicht in deinem Account sind. Sollen sie übernommen werden?',
+      confirmLabel: 'Übernehmen',
+    );
+    if (!confirmed) return;
+
+    var failures = 0;
+    for (final folder in localOnly) {
+      try {
+        await _userLibrary.addFolder(uid, folder);
+      } catch (_) {
+        failures++;
+      }
+    }
+    if (!mounted || failures == 0) return;
+    final message = failures == 1
+        ? '1 Ordner konnte nicht übernommen werden.'
+        : '$failures Ordner konnten nicht übernommen werden.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _createFolder() async {
+    final name = await promptForName(
+      context,
+      title: 'Ordner erstellen',
+      hint: 'z.B. Ostsee-Urlaub 2026',
+    );
+    if (name == null) return;
+
+    final folder = TourFolder(name: name, tourIds: const []);
+    await _folderStorage.addFolder(folder);
+    if (!mounted) return;
+    setState(() => _savedFolders.add(folder));
+
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      try {
+        await _userLibrary.addFolder(uid, folder);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _openFolder(TourFolder folder) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (context) => TourFolderDetailScreen(folder: folder)),
+    );
+    // The detail screen manages its own storage (rename/add/remove Törns,
+    // delete) — simplest to just reload rather than thread every possible
+    // change back through a callback.
+    if (mounted) _loadFolders();
   }
 
   // Merges in Törns saved to this account from any device — local storage
@@ -375,6 +472,44 @@ class _ToursScreenState extends State<ToursScreen> {
 
     await _tourStorage.deleteTourAt(index);
     setState(() => _savedTours.removeAt(index));
+    await _removeTourFromAllFolders(tour.id);
+  }
+
+  // Without this, a deleted Törn's id lingers forever in any folder's
+  // tourIds — TourFolderDetailScreen's day list already tolerates that
+  // (silently filters out ids that no longer resolve to a saved Törn), but
+  // the folder chip's "(N)" count on this screen would stay stale, and the
+  // dangling id would sit in local storage and any synced cloud copy with
+  // no other cleanup path.
+  Future<void> _removeTourFromAllFolders(String tourId) async {
+    final affected =
+        _savedFolders.where((f) => f.tourIds.contains(tourId)).toList();
+    if (affected.isEmpty) return;
+
+    final updated = <TourFolder>[];
+    for (final folder in affected) {
+      final next = folder.copyWith(
+        tourIds: folder.tourIds.where((id) => id != tourId).toList(),
+      );
+      await _folderStorage.upsertFolder(next);
+      updated.add(next);
+    }
+    if (!mounted) return;
+    setState(() {
+      for (final folder in updated) {
+        final index = _savedFolders.indexWhere((f) => f.id == folder.id);
+        if (index != -1) _savedFolders[index] = folder;
+      }
+    });
+
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      for (final folder in updated) {
+        try {
+          await _userLibrary.addFolder(uid, folder);
+        } catch (_) {}
+      }
+    }
   }
 
   Future<void> _renameTour(int index) async {
@@ -625,7 +760,46 @@ class _ToursScreenState extends State<ToursScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Text('Ordner', style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Ordner erstellen',
+                  icon: const Icon(Icons.create_new_folder),
+                  onPressed: _createFolder,
+                ),
+              ],
+            ),
+            if (_savedFolders.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'z.B. für einen Urlaub aus mehreren Tagestörns',
+                  style: TextStyle(color: Colors.black54, fontSize: 12),
+                ),
+              )
+            else
+              SizedBox(
+                height: 40,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _savedFolders.length,
+                  itemBuilder: (context, index) {
+                    final folder = _savedFolders[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: ActionChip(
+                        avatar: const Icon(Icons.folder, size: 18),
+                        label: Text('${folder.name} (${folder.tourIds.length})'),
+                        onPressed: () => _openFolder(folder),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 16),
             Expanded(
               child: _savedTours.isEmpty
                   ? const Center(child: Text('Noch keine Törns gespeichert'))

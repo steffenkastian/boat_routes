@@ -40,6 +40,28 @@ class ShareService {
         sharedWithEmail: sharedWithEmail,
       );
 
+  // Bundles every day-Törn's full data into one share, ordered — a
+  // recipient sees the whole trip (day list, combined map, totals) exactly
+  // like the owner does, and "Übernehmen" imports all of it as a new
+  // folder plus its Törns rather than each Törn separately.
+  Future<String> shareFolder(
+    String folderName,
+    List<Tour> tours, {
+    required String ownerUid,
+    required String ownerEmail,
+    String? sharedWithEmail,
+  }) => _share(
+        type: 'folder',
+        name: folderName,
+        data: {
+          'folderName': folderName,
+          'tours': tours.map((t) => t.toJson()).toList(),
+        },
+        ownerUid: ownerUid,
+        ownerEmail: ownerEmail,
+        sharedWithEmail: sharedWithEmail,
+      );
+
   Future<String> _share({
     required String type,
     required String name,

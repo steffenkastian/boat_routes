@@ -7,11 +7,14 @@ import '../controllers/route_annotations_controller.dart';
 import '../models/boat_route.dart';
 import '../models/shared_item.dart';
 import '../models/tour.dart';
+import '../models/tour_folder.dart';
 import '../services/auth_service.dart';
 import '../services/route_storage_service.dart';
 import '../services/share_service.dart';
+import '../services/tour_folder_storage_service.dart';
 import '../services/tour_storage_service.dart';
 import '../services/user_library_service.dart';
+import '../utils/geo_utils.dart';
 import '../widgets/route_map_view.dart';
 import 'main_shell.dart';
 
@@ -41,6 +44,7 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
   final _shareService = ShareService();
   final _routeStorage = RouteStorageService();
   final _tourStorage = TourStorageService();
+  final _folderStorage = TourFolderStorageService();
   final _userLibrary = UserLibraryService();
   final _auth = AuthController(AuthService());
   final _annotations = RouteAnnotationsController();
@@ -73,9 +77,15 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
 
   void _onAnnotationsChanged() => setState(() {});
 
-  List<LatLng> _pointsOf(SharedItem item) => item.type == SharedItemType.route
-      ? item.toRoute().points
-      : item.toTour().points;
+  List<LatLng> _pointsOf(SharedItem item) => switch (item.type) {
+        SharedItemType.route => item.toRoute().points,
+        SharedItemType.tour => item.toTour().points,
+        // Every day's track concatenated in order — one continuous line
+        // covering the whole trip, same as "Gesamte Strecke anzeigen" in
+        // TourFolderDetailScreen.
+        SharedItemType.folder =>
+          item.toFolderTours().expand((t) => t.points).toList(),
+      };
 
   Future<void> _load() async {
     setState(() => _loading = true);
@@ -119,31 +129,72 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
     final user = await FirebaseAuth.instance.authStateChanges().first;
     if (!mounted) return;
 
-    if (item.type == SharedItemType.route) {
-      final route = BoatRoute(name: item.name, points: item.toRoute().points);
-      await _routeStorage.addRoute(route);
-      if (user != null) {
-        try {
-          await _userLibrary.addRoute(user.uid, route);
-        } catch (_) {
-          // Local copy already saved either way; cloud sync can catch up
-          // on next login-triggered merge.
+    switch (item.type) {
+      case SharedItemType.route:
+        final route = BoatRoute(name: item.name, points: item.toRoute().points);
+        await _routeStorage.addRoute(route);
+        if (user != null) {
+          try {
+            await _userLibrary.addRoute(user.uid, route);
+          } catch (_) {
+            // Local copy already saved either way; cloud sync can catch
+            // up on next login-triggered merge.
+          }
         }
-      }
-    } else {
-      final sharedTour = item.toTour();
-      final copy = Tour(
-        name: sharedTour.name,
-        points: sharedTour.points,
-        startedAt: sharedTour.startedAt,
-        endedAt: sharedTour.endedAt,
-      );
-      await _tourStorage.addTour(copy);
-      if (user != null) {
-        try {
-          await _userLibrary.addTour(user.uid, copy);
-        } catch (_) {}
-      }
+      case SharedItemType.tour:
+        final sharedTour = item.toTour();
+        final copy = Tour(
+          name: sharedTour.name,
+          points: sharedTour.points,
+          startedAt: sharedTour.startedAt,
+          endedAt: sharedTour.endedAt,
+        );
+        await _tourStorage.addTour(copy);
+        if (user != null) {
+          try {
+            await _userLibrary.addTour(user.uid, copy);
+          } catch (_) {}
+        }
+      case SharedItemType.folder:
+        // Fresh ids throughout (not the shared copies' ids) — this becomes
+        // an independent folder + Törns in the recipient's own library,
+        // not a reference to the owner's.
+        final copies = item.toFolderTours().map((t) => Tour(
+              name: t.name,
+              points: t.points,
+              startedAt: t.startedAt,
+              endedAt: t.endedAt,
+            )).toList();
+        for (final tour in copies) {
+          await _tourStorage.addTour(tour);
+        }
+        final folder = TourFolder(
+          name: item.name,
+          tourIds: copies.map((t) => t.id).toList(),
+        );
+        await _folderStorage.addFolder(folder);
+        if (user != null) {
+          // Each tour uploaded independently (one failure shouldn't skip
+          // the rest), and the cloud folder doc below only references the
+          // ones that actually made it up — otherwise a partial failure
+          // here would leave a cloud folder pointing at tour ids that
+          // were never uploaded. The local copy (already saved above) is
+          // unaffected either way; a future login-triggered sync will
+          // offer to (re-)upload whatever's still local-only.
+          final uploadedIds = <String>[];
+          for (final tour in copies) {
+            try {
+              await _userLibrary.addTour(user.uid, tour);
+              uploadedIds.add(tour.id);
+            } catch (_) {}
+          }
+          try {
+            await _userLibrary.addFolder(
+              user.uid,
+              folder.copyWith(tourIds: uploadedIds),
+            );
+          } catch (_) {}
+        }
     }
     if (!mounted) return;
     setState(() => _saved = true);
@@ -151,6 +202,12 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
       const SnackBar(content: Text('Zu deiner eigenen Liste hinzugefügt.')),
     );
   }
+
+  String _typeLabel(SharedItemType type) => switch (type) {
+        SharedItemType.route => 'Route',
+        SharedItemType.tour => 'Törn',
+        SharedItemType.folder => 'Ordner',
+      };
 
   // Reachable directly from a share link (app.dart), with no normal back
   // navigation into the rest of the app in that case.
@@ -189,7 +246,13 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
     }
 
     final item = _item!;
-    final points = _pointsOf(item);
+    // Computed once and reused below (map points + day cards) rather than
+    // re-parsing the whole tours list from JSON twice per build.
+    final folderTours =
+        item.type == SharedItemType.folder ? item.toFolderTours() : const <Tour>[];
+    final points = item.type == SharedItemType.folder
+        ? folderTours.expand((t) => t.points).toList()
+        : _pointsOf(item);
     final initialCamera = CameraPosition(
       target:
           points.isNotEmpty ? points.first : const LatLng(54.382440, 11.145867),
@@ -209,8 +272,7 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    'Geteilt von ${item.ownerEmail}'
-                    '${item.type == SharedItemType.route ? " · Route" : " · Törn"}',
+                    'Geteilt von ${item.ownerEmail} · ${_typeLabel(item.type)}',
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -222,6 +284,34 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
               ],
             ),
           ),
+          if (item.type == SharedItemType.folder)
+            SizedBox(
+              height: 96,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: folderTours.asMap().entries.map((entry) {
+                  final tour = entry.value;
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Tag ${entry.key + 1}',
+                              style: Theme.of(context).textTheme.labelLarge),
+                          Text(tour.name),
+                          Text(
+                            '${totalDistanceNm(tour.points).toStringAsFixed(1)} sm',
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
           Expanded(
             child: RouteMapView(
               initialCamera: initialCamera,

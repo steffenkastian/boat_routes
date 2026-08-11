@@ -104,11 +104,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ...sharedWithMe.map(
             (item) => ListTile(
               contentPadding: EdgeInsets.zero,
-              leading: Icon(
-                item.type == SharedItemType.route
-                    ? Icons.directions_boat
-                    : Icons.route,
-              ),
+              leading: Icon(switch (item.type) {
+                SharedItemType.route => Icons.route,
+                SharedItemType.tour => Icons.directions_boat,
+                SharedItemType.folder => Icons.folder,
+              }),
               title: Text(item.name),
               subtitle: Text('von ${item.ownerEmail}'),
               onTap: () => Navigator.push(

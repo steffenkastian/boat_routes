@@ -75,7 +75,25 @@ Future<void> showShareDialog(
   );
   if (choice == null || !context.mounted) return;
 
-  final shareId = await createShare(email: choice.email);
+  final String shareId;
+  try {
+    shareId = await createShare(email: choice.email);
+  } catch (_) {
+    // E.g. a Firestore document-size limit hit by a very large/long
+    // shared track (especially a multi-day folder) — without this, the
+    // failure would propagate as an unhandled exception instead of a
+    // message the user can actually act on.
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Teilen fehlgeschlagen — möglicherweise ist die Strecke zu umfangreich.',
+          ),
+        ),
+      );
+    }
+    return;
+  }
   if (!context.mounted) return;
 
   if (choice.mode == _ShareMode.link) {

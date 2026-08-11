@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../config.dart';
 import '../services/location_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/marker_icon_factory.dart';
@@ -25,12 +26,6 @@ class LiveLocationController extends ChangeNotifier {
   // moved at least this far.
   static const _minMovementForHeadingMeters = 3.0;
 
-  // A single bad fix (observed occasionally after the screen was locked and
-  // the browser suspended/resumed the position stream) can imply an
-  // impossible speed — e.g. "500m in 1s". Reject anything faster than a very
-  // generous upper bound for a boat instead of recording the jump.
-  static const _maxPlausibleSpeedMps = 30.0; // ~58 knots
-
   StreamSubscription<geo.Position>? _positionSub;
   // google_maps_flutter_web's Marker.rotation is silently ignored for
   // raster icons (only vector Symbol icons rotate on the classic
@@ -41,6 +36,11 @@ class LiveLocationController extends ChangeNotifier {
   final Set<int> _pendingBoatIconBuckets = {};
   LatLng? _lastFixForHeading;
   DateTime? _lastFixTime;
+  // Speed implied by the last *accepted* fix — kept alongside the position/
+  // time so the acceleration outlier check below has something to compare
+  // against, without needing to trust geo.Position.speed (device-reported,
+  // not always populated/reliable across platforms).
+  double? _lastSpeedMps;
 
   Timer? _fixTimeoutTimer;
 
@@ -159,6 +159,7 @@ class LiveLocationController extends ChangeNotifier {
     // right as tracking starts.
     _lastFixForHeading = null;
     _lastFixTime = null;
+    _lastSpeedMps = null;
     _safeNotify();
 
     final LocationAccessStatus result;
@@ -210,24 +211,48 @@ class LiveLocationController extends ChangeNotifier {
       _positionSub =
           _locationService.positionStream(background: background).listen(
         (position) {
-          _fixTimeoutTimer?.cancel();
-          final fix = LatLng(position.latitude, position.longitude);
+          // Dropped before any comparison to previous fixes — see
+          // GpsFilterConfig.maxHorizontalAccuracyMeters for why. Doesn't
+          // cancel _fixTimeoutTimer: if every fix keeps getting rejected
+          // (e.g. persistently poor accuracy), the original 10s timer
+          // should still fire and surface that as "no GPS data" instead of
+          // silently leaving the UI stuck on "GPS wird gesucht…" forever.
+          if (position.accuracy > GpsFilterConfig.maxHorizontalAccuracyMeters) {
+            return;
+          }
 
+          final fix = LatLng(position.latitude, position.longitude);
           final lastFix = _lastFixForHeading;
           final lastTime = _lastFixTime;
+          double? currentSpeedMps;
           if (lastFix != null && lastTime != null) {
             final elapsedSeconds =
                 position.timestamp.difference(lastTime).inMilliseconds / 1000;
-            if (elapsedSeconds > 0 &&
-                distanceMeters(lastFix, fix) / elapsedSeconds >
-                    _maxPlausibleSpeedMps) {
-              // Outlier (e.g. a jump right after the screen was locked and
-              // the position stream resumed) — drop it and wait for the
-              // next fix rather than recording/showing an impossible jump.
-              return;
+            if (elapsedSeconds > 0) {
+              currentSpeedMps = distanceMeters(lastFix, fix) / elapsedSeconds;
+              if (currentSpeedMps > GpsFilterConfig.maxPlausibleSpeedMps) {
+                // Outlier (e.g. a jump right after the screen was locked
+                // and the position stream resumed) — drop it and wait for
+                // the next fix rather than recording/showing an
+                // implausible jump.
+                return;
+              }
+              final lastSpeed = _lastSpeedMps;
+              if (lastSpeed != null &&
+                  elapsedSeconds >=
+                      GpsFilterConfig.minSecondsForAccelerationCheck) {
+                final acceleration =
+                    (currentSpeedMps - lastSpeed).abs() / elapsedSeconds;
+                if (acceleration > GpsFilterConfig.maxPlausibleAccelerationMps2) {
+                  // The speed alone was plausible, but reaching it that
+                  // fast from the last accepted fix isn't.
+                  return;
+                }
+              }
             }
           }
 
+          _fixTimeoutTimer?.cancel();
           currentPosition = position;
           streamError = null;
           if (lastFix != null &&
@@ -236,6 +261,7 @@ class LiveLocationController extends ChangeNotifier {
           }
           _lastFixForHeading = fix;
           _lastFixTime = position.timestamp;
+          _lastSpeedMps = currentSpeedMps ?? _lastSpeedMps;
           if (isRecording) track.add(fix);
           _safeNotify();
         },
