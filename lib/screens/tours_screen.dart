@@ -732,6 +732,19 @@ class _ToursScreenState extends State<ToursScreen> {
       );
     }
 
+    // Törns that belong to a folder are shown there instead — hidden here
+    // rather than listed twice. The (originalIndex, tour) pairing is
+    // load-bearing: _renameTour/_deleteTour index into _savedTours (and,
+    // via TourStorageService, the same position in the underlying
+    // SharedPreferences list), so the builder below must keep using
+    // entry.key, not its own iteration index, once the list is filtered.
+    final folderTourIds = _savedFolders.expand((f) => f.tourIds).toSet();
+    final visibleTours = _savedTours
+        .asMap()
+        .entries
+        .where((e) => !folderTourIds.contains(e.value.id))
+        .toList();
+
     return Scaffold(
       appBar: AppBar(title: const Text('Törns ansehen')),
       body: Padding(
@@ -801,12 +814,14 @@ class _ToursScreenState extends State<ToursScreen> {
               ),
             const SizedBox(height: 16),
             Expanded(
-              child: _savedTours.isEmpty
+              child: visibleTours.isEmpty
                   ? const Center(child: Text('Noch keine Törns gespeichert'))
                   : ListView.builder(
-                      itemCount: _savedTours.length,
-                      itemBuilder: (context, index) {
-                        final tour = _savedTours[index];
+                      itemCount: visibleTours.length,
+                      itemBuilder: (context, i) {
+                        final entry = visibleTours[i];
+                        final index = entry.key;
+                        final tour = entry.value;
                         return ListTile(
                           leading: const Icon(Icons.directions_boat),
                           title: Text(tour.name),

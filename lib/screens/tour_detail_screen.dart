@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../controllers/route_annotations_controller.dart';
 import '../models/tour.dart';
+import '../widgets/map_layers_menu.dart';
 import '../widgets/route_map_view.dart';
 
 // Read-only view of a previously recorded Törn: the track with the same
@@ -19,6 +20,9 @@ class TourDetailScreen extends StatefulWidget {
 
 class _TourDetailScreenState extends State<TourDetailScreen> {
   final _annotations = RouteAnnotationsController();
+  bool _showSeaMarks = true;
+  bool _showDepth = false;
+  bool _showCourseAndDistance = true;
 
   @override
   void initState() {
@@ -45,14 +49,38 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.tour.name)),
+      appBar: AppBar(
+        title: Text(widget.tour.name),
+        actions: [
+          IconButton(
+            tooltip: 'Kartenebenen',
+            icon: const Icon(Icons.layers),
+            onPressed: () => showMapLayersMenu(
+              context,
+              showSeaMarks: _showSeaMarks,
+              onSeaMarksChanged: (value) => setState(() => _showSeaMarks = value),
+              showDepth: _showDepth,
+              onDepthChanged: (value) => setState(() => _showDepth = value),
+              showCourseAndDistance: _showCourseAndDistance,
+              onCourseAndDistanceChanged: (value) =>
+                  setState(() => _showCourseAndDistance = value),
+            ),
+          ),
+        ],
+      ),
       body: RouteMapView(
         initialCamera: initialCamera,
         points: points,
         showPointMarkers: false,
+        showSeaMarks: _showSeaMarks,
+        showDepth: _showDepth,
         onTap: (_) {},
         onMapCreated: (_) {},
-        extraMarkers: _annotations.buildMarkers(points, idPrefix: 'tour'),
+        extraMarkers: _annotations.buildMarkers(
+          points,
+          idPrefix: 'tour',
+          showCourseLabels: _showCourseAndDistance,
+        ),
       ),
     );
   }

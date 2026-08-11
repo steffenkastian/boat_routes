@@ -15,6 +15,7 @@ import '../widgets/confirm_dialog.dart';
 import '../widgets/prompt_name_dialog.dart';
 import '../widgets/route_map_view.dart';
 import '../widgets/share_dialog.dart';
+import 'tour_detail_screen.dart';
 
 // A folder groups several day-Törns (e.g. a multi-day sailing holiday) —
 // shows the day list with per-day distance/duration and trip totals, a
@@ -193,12 +194,15 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
     );
   }
 
-  String _formatLatLng(LatLng p) {
-    final latDir = p.latitude >= 0 ? 'N' : 'S';
-    final lonDir = p.longitude >= 0 ? 'E' : 'W';
-    return '${p.latitude.abs().toStringAsFixed(3)}°$latDir, '
-        '${p.longitude.abs().toStringAsFixed(3)}°$lonDir';
+  void _viewDayTour(Tour tour) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => TourDetailScreen(tour: tour)),
+    );
   }
+
+  String _formatDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
 
   String _formatDuration(Duration d) {
     final hours = d.inHours;
@@ -237,68 +241,77 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '${dayTours.length} Tag(e) · ${totalNm.toStringAsFixed(1)} sm gesamt · ${_formatDuration(totalDuration)}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _showCombinedMap,
-                      icon: const Icon(Icons.map),
-                      label: const Text('Gesamte Strecke anzeigen'),
+      body: SafeArea(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${dayTours.length} Tag(e) · ${totalNm.toStringAsFixed(1)} sm gesamt · ${_formatDuration(totalDuration)}',
+                      style: Theme.of(context).textTheme.titleMedium,
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Expanded(
-                    child: dayTours.isEmpty
-                        ? const Center(
-                            child: Text('Noch keine Törns in diesem Ordner'),
-                          )
-                        : ListView.builder(
-                            itemCount: dayTours.length,
-                            itemBuilder: (context, index) {
-                              final tour = dayTours[index];
-                              final points = tour.points;
-                              final route = points.isEmpty
-                                  ? 'Keine Streckendaten'
-                                  : '${_formatLatLng(points.first)} → ${_formatLatLng(points.last)}';
-                              return ListTile(
-                                leading: CircleAvatar(child: Text('${index + 1}')),
-                                title: Text(tour.name),
-                                subtitle: Text(
-                                  '$route\n${totalDistanceNm(points).toStringAsFixed(1)} sm · ${_formatDuration(tour.endedAt.difference(tour.startedAt))}',
-                                ),
-                                isThreeLine: true,
-                                trailing: IconButton(
-                                  tooltip: 'Aus Ordner entfernen',
-                                  icon: const Icon(Icons.remove_circle_outline),
-                                  onPressed: () => _removeTour(tour),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _addTour,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Törn hinzufügen'),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _showCombinedMap,
+                        icon: const Icon(Icons.map),
+                        label: const Text('Gesamte Strecke anzeigen'),
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                    Expanded(
+                      child: dayTours.isEmpty
+                          ? const Center(
+                              child: Text('Noch keine Törns in diesem Ordner'),
+                            )
+                          : ListView.builder(
+                              itemCount: dayTours.length,
+                              itemBuilder: (context, index) {
+                                final tour = dayTours[index];
+                                final points = tour.points;
+                                return ListTile(
+                                  leading: CircleAvatar(child: Text('${index + 1}')),
+                                  title: Text(tour.name),
+                                  subtitle: Text(
+                                    '${_formatDate(tour.startedAt)}  •  ${totalDistanceNm(points).toStringAsFixed(1)} sm  •  ${_formatDuration(tour.endedAt.difference(tour.startedAt))}',
+                                  ),
+                                  trailing: PopupMenuButton<String>(
+                                    onSelected: (value) {
+                                      if (value == 'view') _viewDayTour(tour);
+                                      if (value == 'remove') _removeTour(tour);
+                                    },
+                                    itemBuilder: (context) => const [
+                                      PopupMenuItem(
+                                        value: 'view',
+                                        child: Text('Route ansehen'),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'remove',
+                                        child: Text('Aus Ordner entfernen'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _addTour,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Törn hinzufügen'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 }
