@@ -23,6 +23,7 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
   bool _showSeaMarks = true;
   bool _showDepth = false;
   bool _showCourseAndDistance = true;
+  bool _showArrows = true;
 
   @override
   void initState() {
@@ -64,6 +65,8 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
               showCourseAndDistance: _showCourseAndDistance,
               onCourseAndDistanceChanged: (value) =>
                   setState(() => _showCourseAndDistance = value),
+              showArrows: _showArrows,
+              onArrowsChanged: (value) => setState(() => _showArrows = value),
             ),
           ),
         ],
@@ -80,6 +83,7 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
           points,
           idPrefix: 'tour',
           showCourseLabels: _showCourseAndDistance,
+          showArrows: _showArrows,
         ),
       ),
     );

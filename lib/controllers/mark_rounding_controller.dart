@@ -32,6 +32,15 @@ class MarkRoundingController extends ChangeNotifier {
     }
   }
 
+  // Manually advances to the next mark regardless of position — e.g. the
+  // crew decides to skip a Tonne that isn't going to be rounded this Törn.
+  // A no-op once every mark is already rounded.
+  void skipCurrentTarget() {
+    if (isFinished) return;
+    currentTargetIndex++;
+    notifyListeners();
+  }
+
   double? distanceToTargetNm(LatLng position) {
     final target = currentTarget;
     return target == null ? null : distanceNm(position, target);

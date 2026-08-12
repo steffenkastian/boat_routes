@@ -90,6 +90,7 @@ class RouteAnnotationsController extends ChangeNotifier {
     List<LatLng> points, {
     required String idPrefix,
     bool showCourseLabels = true,
+    bool showArrows = true,
   }) {
     final markers = <Marker>{};
     for (var i = 1; i < points.length; i++) {
@@ -97,7 +98,7 @@ class RouteAnnotationsController extends ChangeNotifier {
       final to = points[i];
 
       final arrowIcon = _arrowIconsByHeading[_headingBucket(bearing(from, to))];
-      if (arrowIcon != null) {
+      if (showArrows && arrowIcon != null) {
         markers.add(Marker(
           markerId: MarkerId('${idPrefix}_arrow_$i'),
           position: _lerp(from, to, 0.5),

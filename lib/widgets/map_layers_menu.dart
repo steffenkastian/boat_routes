@@ -12,6 +12,11 @@ Future<void> showMapLayersMenu(
   required ValueChanged<bool> onDepthChanged,
   required bool showCourseAndDistance,
   required ValueChanged<bool> onCourseAndDistanceChanged,
+  // Null on screens that never draw direction arrows in the first place
+  // (Route planen only shows course/distance labels, no arrows) — omitting
+  // both hides this toggle row entirely instead of controlling nothing.
+  bool? showArrows,
+  ValueChanged<bool>? onArrowsChanged,
 }) {
   // Local, mutable copies: the switches need something they can actually
   // update via setSheetState. Binding `value` directly to the (immutable)
@@ -21,6 +26,7 @@ Future<void> showMapLayersMenu(
   var localSeaMarks = showSeaMarks;
   var localDepth = showDepth;
   var localCourseAndDistance = showCourseAndDistance;
+  var localArrows = showArrows;
 
   return showModalBottomSheet(
     context: context,
@@ -56,6 +62,16 @@ Future<void> showMapLayersMenu(
                 setSheetState(() => localCourseAndDistance = value);
               },
             ),
+            if (localArrows != null)
+              SwitchListTile(
+                secondary: const Icon(Icons.navigation),
+                title: const Text('Richtungspfeile'),
+                value: localArrows!,
+                onChanged: (value) {
+                  onArrowsChanged?.call(value);
+                  setSheetState(() => localArrows = value);
+                },
+              ),
           ],
         ),
       ),

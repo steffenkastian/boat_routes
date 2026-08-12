@@ -24,6 +24,18 @@ class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
   List<LatLng>? _referenceRoute;
   String? _referenceRouteLabel;
+  // Set by ToursScreen's "Route bearbeiten" action (while a Törn with a
+  // loaded reference route is being tracked) to hand that route's points
+  // to RoutePlannerScreen for editing. Tapping "Törn starten" there again
+  // flows back through _onStartTour, which — since ToursScreen is still
+  // mid-Törn — updates the ongoing tracking's reference route instead of
+  // starting a new one (see ToursScreen.didUpdateWidget).
+  List<LatLng>? _routeToEdit;
+  // See RoutePlannerScreen.externalRouteRequestId — a second "Route
+  // bearbeiten" tap for the same (unchanged) route still needs to reload
+  // the canvas, which comparing _routeToEdit by reference alone wouldn't
+  // catch.
+  int _editRouteRequestId = 0;
 
   void _onRegattaSelected(Regatta regatta) {
     setState(() {
@@ -41,14 +53,27 @@ class _MainShellState extends State<MainShell> {
     });
   }
 
+  void _onEditRoute(List<LatLng> points) {
+    setState(() {
+      _routeToEdit = points;
+      _editRouteRequestId++;
+      _selectedIndex = 0;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
-      RoutePlannerScreen(onStartTour: _onStartTour),
+      RoutePlannerScreen(
+        onStartTour: _onStartTour,
+        externalRoute: _routeToEdit,
+        externalRouteRequestId: _editRouteRequestId,
+      ),
       RegattaScreen(onRegattaSelected: _onRegattaSelected),
       ToursScreen(
         referenceRoute: _referenceRoute,
         referenceRouteLabel: _referenceRouteLabel,
+        onEditRoute: _onEditRoute,
       ),
       const ProfileScreen(),
     ];

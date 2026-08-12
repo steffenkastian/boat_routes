@@ -333,6 +333,7 @@ class _CombinedRouteMapScreenState extends State<_CombinedRouteMapScreen> {
   bool _showSeaMarks = true;
   bool _showDepth = false;
   bool _showCourseAndDistance = true;
+  bool _showArrows = true;
 
   @override
   void initState() {
@@ -369,6 +370,8 @@ class _CombinedRouteMapScreenState extends State<_CombinedRouteMapScreen> {
               showCourseAndDistance: _showCourseAndDistance,
               onCourseAndDistanceChanged: (value) =>
                   setState(() => _showCourseAndDistance = value),
+              showArrows: _showArrows,
+              onArrowsChanged: (value) => setState(() => _showArrows = value),
             ),
           ),
         ],
@@ -385,6 +388,7 @@ class _CombinedRouteMapScreenState extends State<_CombinedRouteMapScreen> {
           points,
           idPrefix: 'folder',
           showCourseLabels: _showCourseAndDistance,
+          showArrows: _showArrows,
         ),
       ),
     );

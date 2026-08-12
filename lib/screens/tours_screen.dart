@@ -29,12 +29,21 @@ import 'tour_detail_screen.dart';
 import 'tour_folder_detail_screen.dart';
 
 class ToursScreen extends StatefulWidget {
-  const ToursScreen({this.referenceRoute, this.referenceRouteLabel, super.key});
+  const ToursScreen({
+    this.referenceRoute,
+    this.referenceRouteLabel,
+    this.onEditRoute,
+    super.key,
+  });
 
   // Points to show as a reference course while tracking — either a loaded
   // regatta or the currently drawn route from "Route planen".
   final List<LatLng>? referenceRoute;
   final String? referenceRouteLabel;
+  // "Route bearbeiten" in the next-mark menu calls this (with the current
+  // referenceRoute) to hand off to MainShell, which switches to Route
+  // planen with those points loaded for editing.
+  final ValueChanged<List<LatLng>>? onEditRoute;
 
   @override
   State<ToursScreen> createState() => _ToursScreenState();
@@ -65,6 +74,7 @@ class _ToursScreenState extends State<ToursScreen> {
   bool _showSeaMarks = true;
   bool _showDepth = false;
   bool _showCourseAndDistance = true;
+  bool _showArrows = true;
   String? _syncedForUid;
   // Awaited by _syncToursOnLogin() before it looks at _savedTours — the
   // initial SharedPreferences load and the Firebase auth-state event race
@@ -76,6 +86,11 @@ class _ToursScreenState extends State<ToursScreen> {
   MarkRoundingController? _markRounding;
   LatLng? _queriedPoint;
   bool _mapTapGuard = false;
+  // "Routenplanung beenden" in the next-mark menu sets this false, which
+  // hides the reference route's polyline/annotations and stops the
+  // mark-rounding readout without touching the actual GPS tracking — a
+  // newly loaded route (didUpdateWidget) resets it back to true.
+  bool _followingReferenceRoute = true;
 
   // On Flutter web the GoogleMap platform view can receive a tap directly
   // (it isn't routed through Flutter's own widget hit-testing), so a tap
@@ -106,11 +121,44 @@ class _ToursScreenState extends State<ToursScreen> {
     _referenceAnnotations.ensureIconsFor(widget.referenceRoute ?? const []);
   }
 
+  // List<LatLng> has no value equality of its own — comparing by `!=`
+  // (identity) would treat "Route bearbeiten" → "Törn starten" without
+  // any actual edit as a brand-new route (RoutePlannerScreen always
+  // builds a fresh List for onStartTour), wiping already-rounded marks'
+  // progress for no reason. LatLng itself does have value equality, so a
+  // pairwise comparison is enough.
+  bool _sameRoute(List<LatLng>? a, List<LatLng>? b) {
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   @override
   void didUpdateWidget(covariant ToursScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.referenceRoute != oldWidget.referenceRoute) {
-      _referenceAnnotations.ensureIconsFor(widget.referenceRoute ?? const []);
+    final route = widget.referenceRoute;
+    if (!_sameRoute(route, oldWidget.referenceRoute)) {
+      _referenceAnnotations.ensureIconsFor(route ?? const []);
+      setState(() {
+        // A freshly (re)loaded route is followed again by default, even
+        // if "Routenplanung beenden" had previously turned this off for
+        // the old one.
+        _followingReferenceRoute = true;
+        // Only touches mark-rounding progress while a Törn is actually
+        // being tracked — outside of that, _markRounding is always null
+        // and only _startTour() ever creates it. This is what makes
+        // "Route bearbeiten" → edit in Route planen → "Törn starten"
+        // update the *ongoing* Törn's reference route instead of
+        // requiring it to be ended and restarted.
+        if (_isTracking) {
+          _markRounding = route != null && route.isNotEmpty
+              ? MarkRoundingController(route)
+              : null;
+        }
+      });
     }
   }
 
@@ -336,6 +384,11 @@ class _ToursScreenState extends State<ToursScreen> {
       _isTracking = true;
       _startedAt = DateTime.now();
       _queriedPoint = null;
+      // Otherwise a "Routenplanung beenden" from a previous Törn (against
+      // the same, unchanged reference route — didUpdateWidget only fires
+      // on a reference route *change*) would silently carry over and
+      // start this new Törn with route-following already off.
+      _followingReferenceRoute = true;
       _markRounding = route != null && route.isNotEmpty
           ? MarkRoundingController(route)
           : null;
@@ -552,6 +605,54 @@ class _ToursScreenState extends State<ToursScreen> {
     setState(() => _queriedPoint = position);
   }
 
+  // Tapping the next-mark marker while tracking a Törn against a loaded
+  // route — GPS tracking itself is untouched by any of these three
+  // actions, only the reference-route/mark-rounding guidance is affected.
+  Future<void> _showMarkMenu() async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Nächste Tonne'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'skip'),
+            child: const Text('Tonne überspringen'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'edit'),
+            child: const Text('Route bearbeiten'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'end'),
+            child: const Text('Routenplanung beenden'),
+          ),
+        ],
+      ),
+    );
+    // Guards against the dialog-dismissing tap also reaching the map
+    // underneath — same reasoning as showMapLayersMenu's .then(...).
+    _guardNextMapTap();
+    if (!mounted || action == null) return;
+
+    switch (action) {
+      case 'skip':
+        setState(() => _markRounding?.skipCurrentTarget());
+      case 'edit':
+        final route = widget.referenceRoute;
+        if (route != null) widget.onEditRoute?.call(route);
+      case 'end':
+        setState(() {
+          _followingReferenceRoute = false;
+          // Also drops mark-rounding progress itself (not just the
+          // polyline/annotations), since _nextMarkInfoText and the
+          // background-tracking notification both read _markRounding
+          // directly — leaving it alive would keep showing "Nächste
+          // Tonne: …" even though route-following was just turned off.
+          _markRounding = null;
+        });
+    }
+  }
+
   String? get _nextMarkInfoText {
     final rounding = _markRounding;
     final position = _location.currentPosition;
@@ -615,6 +716,8 @@ class _ToursScreenState extends State<ToursScreen> {
                 showCourseAndDistance: _showCourseAndDistance,
                 onCourseAndDistanceChanged: (value) =>
                     setState(() => _showCourseAndDistance = value),
+                showArrows: _showArrows,
+                onArrowsChanged: (value) => setState(() => _showArrows = value),
               ).then((_) => _guardNextMapTap()),
             ),
           ],
@@ -629,11 +732,24 @@ class _ToursScreenState extends State<ToursScreen> {
               onMapCreated: (controller) => _mapController = controller,
               extraMarkers: {
                 if (_location.boatMarker case final marker?) marker,
-                ..._referenceAnnotations.buildMarkers(
-                  widget.referenceRoute ?? const [],
-                  idPrefix: 'reference',
-                  showCourseLabels: _showCourseAndDistance,
-                ),
+                if (_followingReferenceRoute)
+                  ..._referenceAnnotations.buildMarkers(
+                    widget.referenceRoute ?? const [],
+                    idPrefix: 'reference',
+                    showCourseLabels: _showCourseAndDistance,
+                    showArrows: _showArrows,
+                  ),
+                if (_followingReferenceRoute)
+                  if (_markRounding?.currentTarget case final target?)
+                    Marker(
+                      markerId: const MarkerId('next_mark'),
+                      position: target,
+                      icon: BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueYellow,
+                      ),
+                      consumeTapEvents: true,
+                      onTap: _showMarkMenu,
+                    ),
                 if (_queriedPoint case final point?)
                   Marker(
                     markerId: const MarkerId('queried_point'),
@@ -644,7 +760,8 @@ class _ToursScreenState extends State<ToursScreen> {
                     consumeTapEvents: true,
                   ),
               },
-              referenceRoute: widget.referenceRoute,
+              referenceRoute:
+                  _followingReferenceRoute ? widget.referenceRoute : null,
               showSeaMarks: _showSeaMarks,
               showDepth: _showDepth,
             ),

@@ -23,9 +23,24 @@ import '../widgets/saved_routes_panel.dart';
 import '../widgets/share_dialog.dart';
 
 class RoutePlannerScreen extends StatefulWidget {
-  const RoutePlannerScreen({required this.onStartTour, super.key});
+  const RoutePlannerScreen({
+    required this.onStartTour,
+    this.externalRoute,
+    this.externalRouteRequestId = 0,
+    super.key,
+  });
 
   final ValueChanged<List<LatLng>> onStartTour;
+  // Set by MainShell when the user taps "Route bearbeiten" while tracking a
+  // Törn (see ToursScreen) — loads these points into the canvas here for
+  // editing, same as picking a saved route would.
+  final List<LatLng>? externalRoute;
+  // Incremented on every "Route bearbeiten" tap, even ones that hand over
+  // the exact same route again — didUpdateWidget below reloads on this
+  // changing rather than on externalRoute itself, since two consecutive
+  // taps would otherwise pass an unchanged list reference and silently do
+  // nothing the second time.
+  final int externalRouteRequestId;
 
   @override
   State<RoutePlannerScreen> createState() => _RoutePlannerScreenState();
@@ -71,6 +86,21 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     _location.addListener(_onLocationChanged);
     _location.start();
     _auth.addListener(_onAuthChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant RoutePlannerScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final external = widget.externalRoute;
+    if (external != null &&
+        widget.externalRouteRequestId != oldWidget.externalRouteRequestId) {
+      setState(() {
+        _points
+          ..clear()
+          ..addAll(external);
+      });
+      _ensureMarkerIcons();
+    }
   }
 
   @override
