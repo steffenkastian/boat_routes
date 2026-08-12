@@ -19,7 +19,23 @@ class GpsFilterConfig {
   // outright, before any comparison to previous fixes. In practice a poor-
   // accuracy fix is very often the actual *source* of an apparent "jump",
   // not real boat movement, so this alone catches a lot of outliers early.
-  static const double maxHorizontalAccuracyMeters = 30.0;
+  //
+  // 100m rather than something tighter: a phone tracking in the background
+  // (in a pocket, below deck, screen locked) routinely reports temporarily
+  // degraded accuracy — a stricter threshold here doesn't just reject
+  // outliers, it silently drops *all* real fixes for however long accuracy
+  // stays degraded, which showed up as multi-minute gaps in a recorded
+  // track. maxGapSeconds below is the backstop for whatever this still
+  // doesn't cover.
+  static const double maxHorizontalAccuracyMeters = 100.0;
+
+  // Applies even when maxGapSeconds forces a fix through — a gap should
+  // never end with genuinely nonsensical data (e.g. a coarse cell-tower-
+  // only fallback fix off by kilometers) getting baked into the track just
+  // because enough time has passed. Deliberately far looser than the
+  // normal 100m bound above; this is a last-resort sanity check, not a
+  // quality bar.
+  static const double maxHorizontalAccuracyMetersForced = 1000.0;
 
   // A fix implying a speed above this (distance from the last accepted fix
   // divided by the time between them), in meters per second, is rejected.
@@ -46,4 +62,14 @@ class GpsFilterConfig {
   // nothing to do with the boat's real motion, so the check needs a
   // wider time base to be a meaningful signal.
   static const double minSecondsForAccelerationCheck = 1.0;
+
+  // Backstop against an unbounded gap: if it's been at least this long
+  // since the last *accepted* fix, the next candidate fix is accepted
+  // regardless of the checks above, rather than being rejected yet again
+  // and extending the gap indefinitely. Every individual check exists to
+  // reject one bad-looking fix and wait for the next one — none of them
+  // are designed to cope with conditions (e.g. degraded accuracy) that
+  // persist for minutes at a time, which a fixed threshold alone can't
+  // fully rule out no matter how it's tuned.
+  static const double maxGapSeconds = 60.0;
 }

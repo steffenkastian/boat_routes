@@ -609,6 +609,11 @@ class _ToursScreenState extends State<ToursScreen> {
   // route — GPS tracking itself is untouched by any of these three
   // actions, only the reference-route/mark-rounding guidance is affected.
   Future<void> _showMarkMenu() async {
+    // Guards the *opening* tap too: unlike the marker (protected by its
+    // own consumeTapEvents), the next-mark info Card is a plain widget
+    // stacked over the map, and on Flutter web the GoogleMap platform view
+    // can receive that same tap directly underneath it.
+    _guardNextMapTap();
     final action = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -785,14 +790,21 @@ class _ToursScreenState extends State<ToursScreen> {
               Positioned(
                 right: 8,
                 top: 8,
-                child: Card(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    child: Text(
-                      text,
-                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                // Same menu as tapping the next-mark marker itself — this
+                // card is often easier to hit than the marker, especially
+                // when it's off-screen or overlapping other markers.
+                child: GestureDetector(
+                  onTap: _showMarkMenu,
+                  child: Card(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      child: Text(
+                        text,
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
                     ),
                   ),
                 ),
@@ -823,7 +835,14 @@ class _ToursScreenState extends State<ToursScreen> {
                               color: Colors.white, size: 16),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          onPressed: () => setState(() => _queriedPoint = null),
+                          onPressed: () {
+                            // Same tap-passthrough hazard as the next-mark
+                            // Card: on Flutter web this tap can also reach
+                            // the map underneath and immediately set a new
+                            // _queriedPoint right as this one clears.
+                            _guardNextMapTap();
+                            setState(() => _queriedPoint = null);
+                          },
                         ),
                       ],
                     ),
