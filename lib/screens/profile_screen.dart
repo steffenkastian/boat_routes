@@ -4,6 +4,8 @@ import '../controllers/auth_controller.dart';
 import '../models/shared_item.dart';
 import '../services/auth_service.dart';
 import '../services/share_service.dart';
+import 'admin_stats_screen.dart';
+import 'feedback_screen.dart';
 import 'shared_item_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -75,7 +77,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
       appBar: AppBar(title: const Text('Profil')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: _auth.currentUser != null ? _buildSignedIn() : _buildSignedOut(),
+        child: Column(
+          children: [
+            Expanded(
+              child: _auth.currentUser != null
+                  ? _buildSignedIn()
+                  : _buildSignedOut(),
+            ),
+            // Shown regardless of login state — the feedback board is
+            // readable by anyone, only posting requires being signed in
+            // (enforced inside FeedbackScreen itself).
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.forum_outlined),
+              title: const Text('Wünsche & Feedback'),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const FeedbackScreen()),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -97,6 +119,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onPressed: _auth.isBusy ? null : _auth.signOut,
           child: const Text('Abmelden'),
         ),
+        if (_auth.isAdmin) ...[
+          const SizedBox(height: 16),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.bar_chart),
+            title: const Text('Statistik'),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AdminStatsScreen()),
+            ),
+          ),
+        ],
         if (sharedWithMe != null && sharedWithMe.isNotEmpty) ...[
           const SizedBox(height: 32),
           Text('Mit dir geteilt', style: Theme.of(context).textTheme.titleMedium),
@@ -108,6 +142,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 SharedItemType.route => Icons.route,
                 SharedItemType.tour => Icons.directions_boat,
                 SharedItemType.folder => Icons.folder,
+                SharedItemType.routeFolder => Icons.folder_special,
               }),
               title: Text(item.name),
               subtitle: Text('von ${item.ownerEmail}'),

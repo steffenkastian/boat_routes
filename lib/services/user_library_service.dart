@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/boat_route.dart';
+import '../models/route_folder.dart';
 import '../models/tour.dart';
 import '../models/tour_folder.dart';
 
@@ -21,6 +22,13 @@ class UserLibraryService {
       .collection('users')
       .doc(uid)
       .collection('tourFolders');
+
+  CollectionReference<Map<String, dynamic>> _routeFolders(String uid) =>
+      FirebaseFirestore
+          .instance
+          .collection('users')
+          .doc(uid)
+          .collection('routeFolders');
 
   // Written under the route/tour's own locally-generated id (not
   // Firestore's auto-id via .add()) so the same id addresses it in local
@@ -47,5 +55,13 @@ class UserLibraryService {
   Future<List<TourFolder>> loadFolders(String uid) async {
     final snapshot = await _folders(uid).get();
     return snapshot.docs.map((doc) => TourFolder.fromJson(doc.data())).toList();
+  }
+
+  Future<void> addRouteFolder(String uid, RouteFolder folder) =>
+      _routeFolders(uid).doc(folder.id).set(folder.toJson());
+
+  Future<List<RouteFolder>> loadRouteFolders(String uid) async {
+    final snapshot = await _routeFolders(uid).get();
+    return snapshot.docs.map((doc) => RouteFolder.fromJson(doc.data())).toList();
   }
 }

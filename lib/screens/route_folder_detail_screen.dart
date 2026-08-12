@@ -1,44 +1,43 @@
 import 'package:flutter/material.dart';
 
 import '../controllers/auth_controller.dart';
-import '../models/tour.dart';
-import '../models/tour_folder.dart';
+import '../models/boat_route.dart';
+import '../models/route_folder.dart';
 import '../services/auth_service.dart';
+import '../services/route_folder_storage_service.dart';
+import '../services/route_storage_service.dart';
 import '../services/share_service.dart';
-import '../services/tour_folder_storage_service.dart';
-import '../services/tour_storage_service.dart';
 import '../services/user_library_service.dart';
 import '../utils/geo_utils.dart';
 import '../widgets/combined_route_map_screen.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/prompt_name_dialog.dart';
 import '../widgets/share_dialog.dart';
-import 'tour_detail_screen.dart';
 
-// A folder groups several day-Törns (e.g. a multi-day sailing holiday) —
-// shows the day list with per-day distance/duration and trip totals, a
-// combined map of every day's track, and lets the whole trip be shared at
-// once. Owns its own storage interactions rather than receiving live state
-// from ToursScreen, which just reloads its folder list when this is popped.
-class TourFolderDetailScreen extends StatefulWidget {
-  const TourFolderDetailScreen({required this.folder, super.key});
+// A folder groups several planned routes into one longer trip — shows the
+// leg list with per-leg distance and trip totals, a combined map of every
+// leg, and lets the whole trip be shared at once. Owns its own storage
+// interactions rather than receiving live state from RoutePlannerScreen,
+// which just reloads its folder list when this is popped.
+class RouteFolderDetailScreen extends StatefulWidget {
+  const RouteFolderDetailScreen({required this.folder, super.key});
 
-  final TourFolder folder;
+  final RouteFolder folder;
 
   @override
-  State<TourFolderDetailScreen> createState() =>
-      _TourFolderDetailScreenState();
+  State<RouteFolderDetailScreen> createState() =>
+      _RouteFolderDetailScreenState();
 }
 
-class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
-  final _folderStorage = TourFolderStorageService();
-  final _tourStorage = TourStorageService();
+class _RouteFolderDetailScreenState extends State<RouteFolderDetailScreen> {
+  final _folderStorage = RouteFolderStorageService();
+  final _routeStorage = RouteStorageService();
   final _userLibrary = UserLibraryService();
   final _shareService = ShareService();
   final _auth = AuthController(AuthService());
 
-  late TourFolder _folder;
-  List<Tour> _allTours = [];
+  late RouteFolder _folder;
+  List<BoatRoute> _allRoutes = [];
   bool _loading = true;
 
   @override
@@ -55,35 +54,35 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
   }
 
   Future<void> _load() async {
-    final tours = await _tourStorage.loadTours();
+    final routes = await _routeStorage.loadRoutes();
     if (!mounted) return;
     setState(() {
-      _allTours = tours;
+      _allRoutes = routes;
       _loading = false;
     });
   }
 
-  // Folder tours in order, silently dropping any id that no longer
-  // resolves to a saved Törn (e.g. it was deleted separately) rather than
-  // crashing on a stale reference.
-  List<Tour> get _dayTours => _folder.tourIds
+  // Folder legs in order, silently dropping any id that no longer resolves
+  // to a saved route (e.g. it was deleted separately) rather than crashing
+  // on a stale reference.
+  List<BoatRoute> get _legs => _folder.routeIds
       .map((id) {
-        for (final t in _allTours) {
-          if (t.id == id) return t;
+        for (final r in _allRoutes) {
+          if (r.id == id) return r;
         }
         return null;
       })
-      .whereType<Tour>()
+      .whereType<BoatRoute>()
       .toList();
 
-  Future<void> _persist(TourFolder updated) async {
+  Future<void> _persist(RouteFolder updated) async {
     setState(() => _folder = updated);
     await _folderStorage.upsertFolder(updated);
 
     final uid = _auth.currentUser?.uid;
     if (uid != null) {
       try {
-        await _userLibrary.addFolder(uid, updated);
+        await _userLibrary.addRouteFolder(uid, updated);
       } catch (_) {}
     }
   }
@@ -98,36 +97,36 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
     await _persist(_folder.copyWith(name: name));
   }
 
-  Future<void> _addTour() async {
+  Future<void> _addRoute() async {
     final available =
-        _allTours.where((t) => !_folder.tourIds.contains(t.id)).toList();
+        _allRoutes.where((r) => !_folder.routeIds.contains(r.id)).toList();
     if (available.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Alle gespeicherten Törns sind bereits in diesem Ordner.'),
+          content: Text('Alle gespeicherten Routen sind bereits in diesem Ordner.'),
         ),
       );
       return;
     }
-    final chosen = await showDialog<Tour>(
+    final chosen = await showDialog<BoatRoute>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('Törn hinzufügen'),
+        title: const Text('Route hinzufügen'),
         children: available
-            .map((t) => SimpleDialogOption(
-                  onPressed: () => Navigator.pop(context, t),
-                  child: Text(t.name),
+            .map((r) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, r),
+                  child: Text(r.name),
                 ))
             .toList(),
       ),
     );
     if (chosen == null) return;
-    await _persist(_folder.copyWith(tourIds: [..._folder.tourIds, chosen.id]));
+    await _persist(_folder.copyWith(routeIds: [..._folder.routeIds, chosen.id]));
   }
 
-  Future<void> _removeTour(Tour tour) async {
+  Future<void> _removeRoute(BoatRoute route) async {
     await _persist(_folder.copyWith(
-      tourIds: _folder.tourIds.where((id) => id != tour.id).toList(),
+      routeIds: _folder.routeIds.where((id) => id != route.id).toList(),
     ));
   }
 
@@ -136,7 +135,7 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
       context,
       title: 'Ordner löschen?',
       message:
-          '"${_folder.name}" wirklich löschen? Die enthaltenen Törns bleiben erhalten.',
+          '"${_folder.name}" wirklich löschen? Die enthaltenen Routen bleiben erhalten.',
     );
     if (!confirmed || !mounted) return;
 
@@ -149,10 +148,10 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
   }
 
   Future<void> _shareFolder() async {
-    final dayTours = _dayTours;
-    if (dayTours.isEmpty) {
+    final legs = _legs;
+    if (legs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Der Ordner enthält noch keine Törns.')),
+        const SnackBar(content: Text('Der Ordner enthält noch keine Routen.')),
       );
       return;
     }
@@ -165,9 +164,9 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
     }
     await showShareDialog(
       context,
-      createShare: ({String? email}) => _shareService.shareFolder(
+      createShare: ({String? email}) => _shareService.shareRouteFolder(
         _folder.name,
-        dayTours,
+        legs,
         ownerUid: user.uid,
         ownerEmail: user.email ?? '',
         sharedWithEmail: email,
@@ -176,7 +175,7 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
   }
 
   void _showCombinedMap() {
-    final points = _dayTours.expand((t) => t.points).toList();
+    final points = _legs.expand((r) => r.points).toList();
     if (points.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Keine Streckendaten vorhanden.')),
@@ -192,30 +191,24 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
     );
   }
 
-  void _viewDayTour(Tour tour) {
+  void _viewLeg(BoatRoute route) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (context) => TourDetailScreen(tour: tour)),
+      MaterialPageRoute(
+        builder: (context) =>
+            CombinedRouteMapScreen(title: route.name, points: route.points),
+      ),
     );
   }
 
   String _formatDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
 
-  String _formatDuration(Duration d) {
-    final hours = d.inHours;
-    final minutes = d.inMinutes.remainder(60);
-    return hours > 0 ? '${hours}h ${minutes}min' : '${minutes}min';
-  }
-
   @override
   Widget build(BuildContext context) {
-    final dayTours = _dayTours;
-    final totalNm = dayTours.fold<double>(
-      0, (sum, t) => sum + totalDistanceNm(t.points),
-    );
-    final totalDuration = dayTours.fold<Duration>(
-      Duration.zero, (sum, t) => sum + t.endedAt.difference(t.startedAt),
+    final legs = _legs;
+    final totalNm = legs.fold<double>(
+      0, (sum, r) => sum + totalDistanceNm(r.points),
     );
 
     return Scaffold(
@@ -248,7 +241,7 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${dayTours.length} Tag(e) · ${totalNm.toStringAsFixed(1)} sm gesamt · ${_formatDuration(totalDuration)}',
+                      '${legs.length} Etappe(n) · ${totalNm.toStringAsFixed(1)} sm gesamt',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 12),
@@ -262,25 +255,25 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
                     ),
                     const SizedBox(height: 16),
                     Expanded(
-                      child: dayTours.isEmpty
+                      child: legs.isEmpty
                           ? const Center(
-                              child: Text('Noch keine Törns in diesem Ordner'),
+                              child: Text('Noch keine Routen in diesem Ordner'),
                             )
                           : ListView.builder(
-                              itemCount: dayTours.length,
+                              itemCount: legs.length,
                               itemBuilder: (context, index) {
-                                final tour = dayTours[index];
-                                final points = tour.points;
+                                final route = legs[index];
+                                final points = route.points;
                                 return ListTile(
                                   leading: CircleAvatar(child: Text('${index + 1}')),
-                                  title: Text(tour.name),
+                                  title: Text(route.name),
                                   subtitle: Text(
-                                    '${_formatDate(tour.startedAt)}  •  ${totalDistanceNm(points).toStringAsFixed(1)} sm  •  ${_formatDuration(tour.endedAt.difference(tour.startedAt))}',
+                                    '${_formatDate(route.createdAt)}  •  ${totalDistanceNm(points).toStringAsFixed(1)} sm',
                                   ),
                                   trailing: PopupMenuButton<String>(
                                     onSelected: (value) {
-                                      if (value == 'view') _viewDayTour(tour);
-                                      if (value == 'remove') _removeTour(tour);
+                                      if (value == 'view') _viewLeg(route);
+                                      if (value == 'remove') _removeRoute(route);
                                     },
                                     itemBuilder: (context) => const [
                                       PopupMenuItem(
@@ -301,9 +294,9 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: _addTour,
+                        onPressed: _addRoute,
                         icon: const Icon(Icons.add),
-                        label: const Text('Törn hinzufügen'),
+                        label: const Text('Route hinzufügen'),
                       ),
                     ),
                   ],

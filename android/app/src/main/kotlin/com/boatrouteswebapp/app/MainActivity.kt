@@ -1,4 +1,4 @@
-package com.example.boat_routes_web
+package com.boatrouteswebapp.app
 
 import io.flutter.embedding.android.FlutterActivity
 

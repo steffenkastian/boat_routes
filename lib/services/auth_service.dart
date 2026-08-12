@@ -69,4 +69,12 @@ class AuthService {
     final snapshot = await _users.doc(uid).get();
     return snapshot.data()?['isAdmin'] == true;
   }
+
+  // Admin-only (see firestore.rules' broadened users/{userId} read rule) —
+  // a count() aggregation avoids downloading every profile doc just to
+  // count them.
+  Future<int> fetchUserCount() async {
+    final snapshot = await _users.count().get();
+    return snapshot.count ?? 0;
+  }
 }

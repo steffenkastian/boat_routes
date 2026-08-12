@@ -6,7 +6,14 @@ service cloud.firestore {
     // false, update must keep it unchanged) — only by editing the document
     // directly in the Firestore console.
     match /users/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      // Own profile, or — deliberately independent of resource.data, since
+      // aggregation (count()) queries don't reliably support rules that
+      // depend on the matched documents' own fields — any signed-in admin
+      // (per their own users/{uid} doc) so AdminStatsScreen's user-count
+      // query can read the whole collection.
+      allow read: if request.auth != null
+                  && (request.auth.uid == userId
+                      || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
       allow create: if request.auth != null && request.auth.uid == userId
                     && request.resource.data.isAdmin == false;
       allow update: if request.auth != null && request.auth.uid == userId
@@ -20,6 +27,9 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
       match /tourFolders/{folderId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      match /routeFolders/{folderId} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
     }
@@ -65,6 +75,28 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if request.auth != null
                     && request.auth.uid == resource.data.ownerUid;
+    }
+
+    // The public wishes/feedback board — readable by anyone, even signed
+    // out. Posting a wish requires being signed in and pins authorUid/
+    // authorEmail to the actual signed-in account, same as shared_items.
+    // Replying is admin-only (per the isAdmin field on the replier's own
+    // users/{uid} doc). Nothing is ever edited or removed after creation.
+    match /feedback/{feedbackId} {
+      allow read: if true;
+      allow create: if request.auth != null
+                    && request.resource.data.authorUid == request.auth.uid
+                    && request.resource.data.authorEmail == request.auth.token.email;
+      allow update, delete: if false;
+
+      match /replies/{replyId} {
+        allow read: if true;
+        allow create: if request.auth != null
+                      && request.resource.data.authorUid == request.auth.uid
+                      && request.resource.data.authorEmail == request.auth.token.email
+                      && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+        allow update, delete: if false;
+      }
     }
 
     match /{document=**} {

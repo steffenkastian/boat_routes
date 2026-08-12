@@ -5,9 +5,11 @@ import '../controllers/auth_controller.dart';
 import '../controllers/live_location_controller.dart';
 import '../models/boat_route.dart';
 import '../models/regatta.dart';
+import '../models/route_folder.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/regatta_storage_service.dart';
+import '../services/route_folder_storage_service.dart';
 import '../services/route_storage_service.dart';
 import '../services/share_service.dart';
 import '../services/user_library_service.dart';
@@ -16,11 +18,13 @@ import '../utils/marker_icon_factory.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/hud_overlay.dart';
 import '../widgets/map_layers_menu.dart';
+import '../widgets/prompt_name_dialog.dart';
 import '../widgets/route_map_view.dart';
 import '../widgets/route_points_panel.dart';
 import '../widgets/save_options_dialog.dart';
 import '../widgets/saved_routes_panel.dart';
 import '../widgets/share_dialog.dart';
+import 'route_folder_detail_screen.dart';
 
 class RoutePlannerScreen extends StatefulWidget {
   const RoutePlannerScreen({
@@ -53,6 +57,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   );
 
   final _routeStorage = RouteStorageService();
+  final _folderStorage = RouteFolderStorageService();
   final _regattaStorage = RegattaStorageService();
   final _userLibrary = UserLibraryService();
   final _shareService = ShareService();
@@ -62,6 +67,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   final List<LatLng> _points = [];
   GoogleMapController? _mapController;
   List<BoatRoute> _savedRoutes = [];
+  List<RouteFolder> _savedFolders = [];
   bool _addingEnabled = true;
   bool _hasAutoCenteredOnLocation = false;
   bool _mapTapGuard = false;
@@ -75,6 +81,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   // first would compute "local-only routes" against a still-empty list and
   // never re-check once the load actually finishes.
   late final Future<void> _initialLoadRoutes;
+  late final Future<void> _initialLoadFolders;
 
   final Map<String, BitmapDescriptor> _courseLabelIcons = {};
   final Map<int, BitmapDescriptor> _pointNumberIcons = {};
@@ -83,6 +90,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   void initState() {
     super.initState();
     _initialLoadRoutes = _loadRoutes();
+    _initialLoadFolders = _loadFolders();
     _location.addListener(_onLocationChanged);
     _location.start();
     _auth.addListener(_onAuthChanged);
@@ -117,10 +125,139 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     if (uid != null && uid != _syncedForUid) {
       _syncedForUid = uid;
       _syncRoutesOnLogin(uid);
+      _syncFoldersOnLogin(uid);
     } else if (uid == null) {
       _syncedForUid = null;
     }
     setState(() {});
+  }
+
+  Future<void> _loadFolders() async {
+    final folders = await _folderStorage.loadFolders();
+    if (!mounted) return;
+    setState(() => _savedFolders = folders);
+  }
+
+  // Same shape as _syncRoutesOnLogin, matched by id instead — folders don't
+  // have a natural "same content" key like a route's created time, but
+  // their id is already stable from creation (see RouteFolder), so identity
+  // is simpler and just as correct here.
+  Future<void> _syncFoldersOnLogin(String uid) async {
+    await _initialLoadFolders;
+    if (!mounted) return;
+
+    final cloudFolders = await _userLibrary.loadRouteFolders(uid);
+    if (!mounted) return;
+
+    final newFromCloud = cloudFolders
+        .where((f) => !_savedFolders.any((sf) => sf.id == f.id))
+        .toList();
+    if (newFromCloud.isNotEmpty) {
+      setState(() => _savedFolders.addAll(newFromCloud));
+      for (final folder in newFromCloud) {
+        await _folderStorage.addFolder(folder);
+      }
+    }
+
+    final localOnly = _savedFolders
+        .where((f) => !cloudFolders.any((cf) => cf.id == f.id))
+        .toList();
+    if (localOnly.isEmpty || !mounted) return;
+
+    final confirmed = await confirmDialog(
+      context,
+      title: 'Lokale Ordner übernehmen?',
+      message: localOnly.length == 1
+          ? 'Du hast 1 lokal gespeicherten Ordner, der noch nicht in deinem Account ist. Soll er übernommen werden?'
+          : 'Du hast ${localOnly.length} lokal gespeicherte Ordner, die noch nicht in deinem Account sind. Sollen sie übernommen werden?',
+      confirmLabel: 'Übernehmen',
+    );
+    if (!confirmed) return;
+
+    var failures = 0;
+    for (final folder in localOnly) {
+      try {
+        await _userLibrary.addRouteFolder(uid, folder);
+      } catch (_) {
+        failures++;
+      }
+    }
+    if (!mounted || failures == 0) return;
+    final message = failures == 1
+        ? '1 Ordner konnte nicht übernommen werden.'
+        : '$failures Ordner konnten nicht übernommen werden.';
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _createFolder() async {
+    final name = await promptForName(
+      context,
+      title: 'Ordner erstellen',
+      hint: 'z.B. Ostsee-Segeltörn',
+    );
+    if (name == null) return;
+
+    final folder = RouteFolder(name: name, routeIds: const []);
+    await _folderStorage.addFolder(folder);
+    if (!mounted) return;
+    setState(() => _savedFolders.add(folder));
+
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      try {
+        await _userLibrary.addRouteFolder(uid, folder);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _openFolder(RouteFolder folder) async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RouteFolderDetailScreen(folder: folder),
+      ),
+    );
+    // The detail screen manages its own storage (rename/add/remove routes,
+    // delete) — simplest to just reload rather than thread every possible
+    // change back through a callback.
+    if (mounted) _loadFolders();
+  }
+
+  // Without this, a deleted route's id lingers forever in any folder's
+  // routeIds — RouteFolderDetailScreen's leg list already tolerates that
+  // (silently filters out ids that no longer resolve to a saved route), but
+  // the folder chip's "(N)" count on this screen would stay stale, and the
+  // dangling id would sit in local storage and any synced cloud copy with
+  // no other cleanup path.
+  Future<void> _removeRouteFromAllFolders(String routeId) async {
+    final affected =
+        _savedFolders.where((f) => f.routeIds.contains(routeId)).toList();
+    if (affected.isEmpty) return;
+
+    final updated = <RouteFolder>[];
+    for (final folder in affected) {
+      final next = folder.copyWith(
+        routeIds: folder.routeIds.where((id) => id != routeId).toList(),
+      );
+      await _folderStorage.upsertFolder(next);
+      updated.add(next);
+    }
+    if (!mounted) return;
+    setState(() {
+      for (final folder in updated) {
+        final index = _savedFolders.indexWhere((f) => f.id == folder.id);
+        if (index != -1) _savedFolders[index] = folder;
+      }
+    });
+
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      for (final folder in updated) {
+        try {
+          await _userLibrary.addRouteFolder(uid, folder);
+        } catch (_) {}
+      }
+    }
   }
 
   // Merges in routes saved to this account from any device — local storage
@@ -361,11 +498,14 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     _ensureMarkerIcons();
   }
 
-  Future<void> _deleteRoute(int index) async {
+  Future<void> _deleteRoute(BoatRoute route) async {
+    final index = _savedRoutes.indexWhere((r) => r.id == route.id);
+    if (index == -1) return;
     await _routeStorage.deleteRouteAt(index);
     setState(() {
       _savedRoutes.removeAt(index);
     });
+    await _removeRouteFromAllFolders(route.id);
   }
 
   Future<void> _saveRoute() async {
@@ -543,23 +683,92 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       context: context,
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => FractionallySizedBox(
-          heightFactor: 0.7,
-          child: SafeArea(
-            child: SavedRoutesPanel(
-              routes: _savedRoutes,
-              onLoad: (route) {
-                Navigator.pop(context);
-                _loadRoute(route);
-              },
-              onDelete: (index) {
-                _deleteRoute(index);
-                setSheetState(() {});
-              },
-              onShare: _shareRoute,
+        builder: (context, setSheetState) {
+          // Routes that belong to a folder are shown there instead — hidden
+          // here rather than listed twice.
+          final folderRouteIds =
+              _savedFolders.expand((f) => f.routeIds).toSet();
+          final visibleRoutes = _savedRoutes
+              .where((r) => !folderRouteIds.contains(r.id))
+              .toList();
+
+          return FractionallySizedBox(
+            heightFactor: 0.7,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text('Ordner', style: Theme.of(context).textTheme.titleMedium),
+                        const Spacer(),
+                        IconButton(
+                          tooltip: 'Ordner erstellen',
+                          icon: const Icon(Icons.create_new_folder),
+                          onPressed: () async {
+                            await _createFolder();
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    if (_savedFolders.isEmpty)
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            'z.B. um mehrere Routen zu einem Törn zu kombinieren',
+                            style: TextStyle(color: Colors.black54, fontSize: 12),
+                          ),
+                        ),
+                      )
+                    else
+                      SizedBox(
+                        height: 40,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _savedFolders.length,
+                          itemBuilder: (context, index) {
+                            final folder = _savedFolders[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: ActionChip(
+                                avatar: const Icon(Icons.folder, size: 18),
+                                label: Text(
+                                    '${folder.name} (${folder.routeIds.length})'),
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _openFolder(folder);
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: SavedRoutesPanel(
+                        routes: visibleRoutes,
+                        onLoad: (route) {
+                          Navigator.pop(context);
+                          _loadRoute(route);
+                        },
+                        onDelete: (route) async {
+                          await _deleteRoute(route);
+                          setSheetState(() {});
+                        },
+                        onShare: _shareRoute,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     ).then((_) => _guardNextMapTap());
   }

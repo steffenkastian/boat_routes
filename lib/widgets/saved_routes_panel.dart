@@ -14,7 +14,7 @@ class SavedRoutesPanel extends StatelessWidget {
 
   final List<BoatRoute> routes;
   final ValueChanged<BoatRoute> onLoad;
-  final ValueChanged<int> onDelete;
+  final ValueChanged<BoatRoute> onDelete;
   final ValueChanged<BoatRoute> onShare;
 
   @override
@@ -49,7 +49,7 @@ class SavedRoutesPanel extends StatelessWidget {
                     title: 'Route löschen?',
                     message: '"${route.name}" wirklich löschen?',
                   );
-                  if (confirmed) onDelete(index);
+                  if (confirmed) onDelete(route);
                 },
               ),
             ],

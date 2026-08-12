@@ -5,10 +5,12 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../controllers/auth_controller.dart';
 import '../controllers/route_annotations_controller.dart';
 import '../models/boat_route.dart';
+import '../models/route_folder.dart';
 import '../models/shared_item.dart';
 import '../models/tour.dart';
 import '../models/tour_folder.dart';
 import '../services/auth_service.dart';
+import '../services/route_folder_storage_service.dart';
 import '../services/route_storage_service.dart';
 import '../services/share_service.dart';
 import '../services/tour_folder_storage_service.dart';
@@ -45,6 +47,7 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
   final _routeStorage = RouteStorageService();
   final _tourStorage = TourStorageService();
   final _folderStorage = TourFolderStorageService();
+  final _routeFolderStorage = RouteFolderStorageService();
   final _userLibrary = UserLibraryService();
   final _auth = AuthController(AuthService());
   final _annotations = RouteAnnotationsController();
@@ -85,6 +88,8 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
         // TourFolderDetailScreen.
         SharedItemType.folder =>
           item.toFolderTours().expand((t) => t.points).toList(),
+        SharedItemType.routeFolder =>
+          item.toFolderRoutes().expand((r) => r.points).toList(),
       };
 
   Future<void> _load() async {
@@ -195,6 +200,44 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
             );
           } catch (_) {}
         }
+      case SharedItemType.routeFolder:
+        // Fresh ids throughout (not the shared copies' ids) — this becomes
+        // an independent folder + routes in the recipient's own library,
+        // not a reference to the owner's.
+        final copies = item
+            .toFolderRoutes()
+            .map((r) => BoatRoute(name: r.name, points: r.points))
+            .toList();
+        for (final route in copies) {
+          await _routeStorage.addRoute(route);
+        }
+        final routeFolder = RouteFolder(
+          name: item.name,
+          routeIds: copies.map((r) => r.id).toList(),
+        );
+        await _routeFolderStorage.addFolder(routeFolder);
+        if (user != null) {
+          // Each route uploaded independently (one failure shouldn't skip
+          // the rest), and the cloud folder doc below only references the
+          // ones that actually made it up — otherwise a partial failure
+          // here would leave a cloud folder pointing at route ids that
+          // were never uploaded. The local copy (already saved above) is
+          // unaffected either way; a future login-triggered sync will
+          // offer to (re-)upload whatever's still local-only.
+          final uploadedIds = <String>[];
+          for (final route in copies) {
+            try {
+              await _userLibrary.addRoute(user.uid, route);
+              uploadedIds.add(route.id);
+            } catch (_) {}
+          }
+          try {
+            await _userLibrary.addRouteFolder(
+              user.uid,
+              routeFolder.copyWith(routeIds: uploadedIds),
+            );
+          } catch (_) {}
+        }
     }
     if (!mounted) return;
     setState(() => _saved = true);
@@ -207,6 +250,7 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
         SharedItemType.route => 'Route',
         SharedItemType.tour => 'Törn',
         SharedItemType.folder => 'Ordner',
+        SharedItemType.routeFolder => 'Routen-Ordner',
       };
 
   // Reachable directly from a share link (app.dart), with no normal back
@@ -246,12 +290,21 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
     }
 
     final item = _item!;
-    // Computed once and reused below (map points + day cards) rather than
-    // re-parsing the whole tours list from JSON twice per build.
-    final folderTours =
-        item.type == SharedItemType.folder ? item.toFolderTours() : const <Tour>[];
-    final points = item.type == SharedItemType.folder
-        ? folderTours.expand((t) => t.points).toList()
+    // Computed once and reused below (map points + leg cards) rather than
+    // re-parsing the whole tours/routes list from JSON twice per build.
+    // (name, points, label) per leg — unifies the tour-folder ("Tag N") and
+    // route-folder ("Etappe N") cases so the card strip below is shared.
+    final List<(String name, List<LatLng> points)> legItems =
+        switch (item.type) {
+      SharedItemType.folder =>
+        item.toFolderTours().map((t) => (t.name, t.points)).toList(),
+      SharedItemType.routeFolder =>
+        item.toFolderRoutes().map((r) => (r.name, r.points)).toList(),
+      _ => const [],
+    };
+    final legLabel = item.type == SharedItemType.folder ? 'Tag' : 'Etappe';
+    final points = legItems.isNotEmpty
+        ? legItems.expand((leg) => leg.$2).toList()
         : _pointsOf(item);
     final initialCamera = CameraPosition(
       target:
@@ -284,14 +337,14 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
               ],
             ),
           ),
-          if (item.type == SharedItemType.folder)
+          if (legItems.isNotEmpty)
             SizedBox(
               height: 96,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
-                children: folderTours.asMap().entries.map((entry) {
-                  final tour = entry.value;
+                children: legItems.asMap().entries.map((entry) {
+                  final leg = entry.value;
                   return Card(
                     child: Padding(
                       padding: const EdgeInsets.all(8),
@@ -299,11 +352,11 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text('Tag ${entry.key + 1}',
+                          Text('$legLabel ${entry.key + 1}',
                               style: Theme.of(context).textTheme.labelLarge),
-                          Text(tour.name),
+                          Text(leg.$1),
                           Text(
-                            '${totalDistanceNm(tour.points).toStringAsFixed(1)} sm',
+                            '${totalDistanceNm(leg.$2).toStringAsFixed(1)} sm',
                           ),
                         ],
                       ),

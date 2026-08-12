@@ -4,6 +4,7 @@ import '../models/boat_route.dart';
 import '../models/shared_item.dart';
 import '../models/tour.dart';
 
+
 // A route/Törn shared either as a public link (anyone who has the link can
 // view it, no login needed) or to one specific email address (only that
 // signed-in account can view it) — see firestore.rules for how the two are
@@ -56,6 +57,28 @@ class ShareService {
         data: {
           'folderName': folderName,
           'tours': tours.map((t) => t.toJson()).toList(),
+        },
+        ownerUid: ownerUid,
+        ownerEmail: ownerEmail,
+        sharedWithEmail: sharedWithEmail,
+      );
+
+  // Bundles every leg's full route data into one share, ordered — a
+  // recipient sees the whole combined trip exactly like the owner does, and
+  // "Übernehmen" imports all of it as a new folder plus its routes rather
+  // than each route separately.
+  Future<String> shareRouteFolder(
+    String folderName,
+    List<BoatRoute> routes, {
+    required String ownerUid,
+    required String ownerEmail,
+    String? sharedWithEmail,
+  }) => _share(
+        type: 'routeFolder',
+        name: folderName,
+        data: {
+          'folderName': folderName,
+          'routes': routes.map((r) => r.toJson()).toList(),
         },
         ownerUid: ownerUid,
         ownerEmail: ownerEmail,

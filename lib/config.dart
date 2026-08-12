@@ -5,7 +5,7 @@ class AppConfig {
   // of which platform (web or Android) the share was created from, since
   // a link only makes sense opened in a browser (Uri.base on Android
   // resolves to something app-internal, not a usable web address).
-  static const String webBaseUrl = 'https://steffenkastian.github.io/boat_routes/';
+  static const String webBaseUrl = 'https://steffenkastian.github.io/boat_routes/app/';
 }
 
 // Tuning for how strictly LiveLocationController rejects bad GPS fixes

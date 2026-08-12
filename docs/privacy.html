@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Datenschutzerklärung – Boat Routes</title>
+<link rel="icon" type="image/png" href="app/favicon.png">
+<style>
+  :root {
+    --bg: #f4f8fb;
+    --surface: #ffffff;
+    --text: #16232c;
+    --text-muted: #5b6b76;
+    --accent: #0b6ef3;
+    --border: #dde6ec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1418;
+      --surface: #171f26;
+      --text: #eaf1f6;
+      --text-muted: #9aacb8;
+      --accent: #4d9dff;
+      --border: #263039;
+    }
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 20px 64px;
+  }
+  h1 { font-size: 28px; }
+  h2 { font-size: 19px; margin-top: 36px; }
+  p, li { color: var(--text-muted); }
+  a { color: var(--accent); }
+  .back { display: inline-block; margin-bottom: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="index.html">&larr; Zurück</a>
+  <h1>Datenschutzerklärung</h1>
+  <p>Stand: August 2026. Diese Erklärung beschreibt, welche Daten Boat Routes (Web-App und Android-App) verarbeitet.</p>
+
+  <h2>Konto &amp; Anmeldung</h2>
+  <p>Die Anmeldung erfolgt über Firebase Authentication (E-Mail/Passwort oder Google-Konto). Dabei werden E-Mail-Adresse und eine eindeutige Nutzer-ID gespeichert, die zur Zuordnung deiner Routen, Törns und Ordner verwendet wird.</p>
+
+  <h2>Standort &amp; Törn-Aufzeichnung</h2>
+  <p>Beim Aufzeichnen eines Törns wird dein GPS-Standort fortlaufend erfasst, um die gefahrene Strecke darzustellen. Diese Positionsdaten werden auf deinem Gerät gespeichert und, sofern du eingeloggt bist, zusätzlich in deinem privaten Firestore-Bereich gesichert, damit sie auf anderen Geräten verfügbar sind. Ohne Anmeldung verbleiben sie ausschließlich lokal auf dem Gerät.</p>
+  <p>Auf Android nutzt die Hintergrund-Aufzeichnung einen Vordergrunddienst mit dauerhafter Benachrichtigung, damit das Tracking auch bei gesperrtem Bildschirm weiterläuft.</p>
+
+  <h2>Teilen von Routen &amp; Törns</h2>
+  <p>Wenn du eine Route, einen Törn oder einen Ordner teilst, wird eine Kopie der Streckendaten in einer eigenen, über einen Link oder eine E-Mail-Adresse adressierten Firestore-Sammlung gespeichert. Ein öffentlicher Link ist für jeden einsehbar, der ihn kennt.</p>
+
+  <h2>Wünsche &amp; Feedback</h2>
+  <p>Einträge im Wunsch-Board sind öffentlich lesbar (auch ohne Anmeldung) und enthalten die E-Mail-Adresse des jeweiligen Verfassers.</p>
+
+  <h2>Kartendarstellung</h2>
+  <p>Zur Darstellung der Seekarte wird das Google Maps SDK eingebunden. Dabei können durch Google selbst technische Daten (z. B. IP-Adresse) verarbeitet werden — siehe die <a href="https://policies.google.com/privacy" rel="noopener">Datenschutzhinweise von Google</a>.</p>
+
+  <h2>Keine Werbung, kein Tracking durch Dritte</h2>
+  <p>Boat Routes bindet keine Werbe- oder Analyse-SDKs von Drittanbietern ein.</p>
+
+  <h2>Kontakt</h2>
+  <p>Fragen zum Datenschutz können über das Wunsch-Board in der App gestellt werden.</p>
+</main>
+</body>
+</html>

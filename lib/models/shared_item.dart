@@ -1,7 +1,7 @@
 import 'boat_route.dart';
 import 'tour.dart';
 
-enum SharedItemType { route, tour, folder }
+enum SharedItemType { route, tour, folder, routeFolder }
 
 // A route or Törn shared via the `shared_items` Firestore collection —
 // either publicly (anyone with the link, sharedWithEmail == null) or to one
@@ -32,6 +32,7 @@ class SharedItem {
         type: switch (json['type']) {
           'tour' => SharedItemType.tour,
           'folder' => SharedItemType.folder,
+          'routeFolder' => SharedItemType.routeFolder,
           _ => SharedItemType.route,
         },
         name: json['name'] as String? ?? '',
@@ -47,5 +48,11 @@ class SharedItem {
   // into this share (see ShareService.shareFolder).
   List<Tour> toFolderTours() => (data['tours'] as List)
       .map((t) => Tour.fromJson(Map<String, dynamic>.from(t as Map)))
+      .toList();
+
+  // Only valid for SharedItemType.routeFolder — the ordered legs bundled
+  // into this share (see ShareService.shareRouteFolder).
+  List<BoatRoute> toFolderRoutes() => (data['routes'] as List)
+      .map((r) => BoatRoute.fromJson(Map<String, dynamic>.from(r as Map)))
       .toList();
 }
