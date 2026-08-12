@@ -60,7 +60,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyC_VK8fdB9ZDTBIbUYP3nbZkwBgXvMceCs',
-    appId: '1:655315598805:android:e0e289e391f7a200d0915c',
+    appId: '1:655315598805:android:e9064ab006955c18d0915c',
     messagingSenderId: '655315598805',
     projectId: 'boat-routes-web',
     storageBucket: 'boat-routes-web.firebasestorage.app',
