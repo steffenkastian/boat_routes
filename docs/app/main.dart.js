@@ -30574,7 +30574,7 @@ for(s=J.a5(a),r=0,q=0;q<s.gu(a)-1;q=p){p=q+1
 r+=A.kZ(s.h(a,q),s.h(a,p))}return r},
 nY(a,b){var s=a.a*3.141592653589793/180,r=b.a*3.141592653589793/180,q=(b.b-a.b)*3.141592653589793/180
 return B.d.bn(Math.atan2(Math.sin(q)*Math.cos(r),Math.cos(s)*Math.sin(r)-Math.sin(s)*Math.cos(r)*Math.cos(q))*180/3.141592653589793+360,360)},
-AI(){var s=B.j.kW(B.qi.Np(0),36)
+AI(){var s=B.j.kW(B.qi.Np(-1),36)
 return B.j.kW(1000*Date.now(),36)+s},
 Nl(a,b,c){return A.bdA(a,b,c)},
 bdA(a,b,c){var s=0,r=A.x(t.aG),q,p,o,n,m,l,k,j,i,h,g,f
@@ -44941,7 +44941,7 @@ s.b=B.j.cL(o-n+(q-p)+(m-r),4294967296)>>>0},
 Np(a){var s,r,q,p=this
 if(a<=0||a>4294967296)throw A.h(A.jy(u.Z+a))
 s=a-1
-if((a&s)===0){p.rW()
+if((a&s)>>>0===0){p.rW()
 return(p.a&s)>>>0}do{p.rW()
 r=p.a
 q=r%a}while(r-q+a>=4294967296)
