@@ -369,10 +369,17 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
             child: RouteMapView(
               initialCamera: initialCamera,
               points: points,
+              polylineSegments: legItems.isNotEmpty
+                  ? legItems.map((leg) => leg.$2).toList()
+                  : null,
               showPointMarkers: false,
               onTap: (_) {},
               onMapCreated: (_) {},
-              extraMarkers: _annotations.buildMarkers(points, idPrefix: 'shared'),
+              extraMarkers: legItems.isNotEmpty
+                  ? legItems.asMap().entries.expand((entry) => _annotations
+                      .buildMarkers(entry.value.$2, idPrefix: 'shared_${entry.key}'))
+                      .toSet()
+                  : _annotations.buildMarkers(points, idPrefix: 'shared'),
             ),
           ),
         ],

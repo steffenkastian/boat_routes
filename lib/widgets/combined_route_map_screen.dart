@@ -5,18 +5,21 @@ import '../controllers/route_annotations_controller.dart';
 import 'map_layers_menu.dart';
 import 'route_map_view.dart';
 
-// Read-only map of a combined track/route — used both for a folder's "show
-// everything at once" view and, since it needs nothing folder-specific
-// beyond a title and a flat point list, for viewing a single leg too.
+// Read-only map of one or several combined tracks/routes — used both for a
+// folder's "show everything at once" view (one leg per entry) and for
+// viewing a single leg (a list with one entry). Each leg gets its own
+// polyline + annotations, so unrelated legs aren't visually joined by a
+// straight line between the last point of one and the first point of the
+// next.
 class CombinedRouteMapScreen extends StatefulWidget {
   const CombinedRouteMapScreen({
     required this.title,
-    required this.points,
+    required this.legs,
     super.key,
   });
 
   final String title;
-  final List<LatLng> points;
+  final List<List<LatLng>> legs;
 
   @override
   State<CombinedRouteMapScreen> createState() =>
@@ -30,11 +33,15 @@ class _CombinedRouteMapScreenState extends State<CombinedRouteMapScreen> {
   bool _showCourseAndDistance = true;
   bool _showArrows = true;
 
+  List<LatLng> get _allPoints => widget.legs.expand((leg) => leg).toList();
+
   @override
   void initState() {
     super.initState();
     _annotations.addListener(_onChanged);
-    _annotations.ensureIconsFor(widget.points);
+    for (final leg in widget.legs) {
+      _annotations.ensureIconsFor(leg);
+    }
   }
 
   @override
@@ -46,9 +53,22 @@ class _CombinedRouteMapScreenState extends State<CombinedRouteMapScreen> {
 
   void _onChanged() => setState(() {});
 
+  Set<Marker> _buildAnnotationMarkers() {
+    final markers = <Marker>{};
+    for (var i = 0; i < widget.legs.length; i++) {
+      markers.addAll(_annotations.buildMarkers(
+        widget.legs[i],
+        idPrefix: 'combined_$i',
+        showCourseLabels: _showCourseAndDistance,
+        showArrows: _showArrows,
+      ));
+    }
+    return markers;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final points = widget.points;
+    final allPoints = _allPoints;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),
@@ -72,19 +92,15 @@ class _CombinedRouteMapScreenState extends State<CombinedRouteMapScreen> {
         ],
       ),
       body: RouteMapView(
-        initialCamera: CameraPosition(target: points.first, zoom: 11),
-        points: points,
+        initialCamera: CameraPosition(target: allPoints.first, zoom: 11),
+        points: allPoints,
+        polylineSegments: widget.legs,
         showPointMarkers: false,
         showSeaMarks: _showSeaMarks,
         showDepth: _showDepth,
         onTap: (_) {},
         onMapCreated: (_) {},
-        extraMarkers: _annotations.buildMarkers(
-          points,
-          idPrefix: 'combined',
-          showCourseLabels: _showCourseAndDistance,
-          showArrows: _showArrows,
-        ),
+        extraMarkers: _buildAnnotationMarkers(),
       ),
     );
   }

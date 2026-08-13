@@ -175,8 +175,8 @@ class _RouteFolderDetailScreenState extends State<RouteFolderDetailScreen> {
   }
 
   void _showCombinedMap() {
-    final points = _legs.expand((r) => r.points).toList();
-    if (points.isEmpty) {
+    final legs = _legs.map((r) => r.points).toList();
+    if (legs.every((leg) => leg.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Keine Streckendaten vorhanden.')),
       );
@@ -186,7 +186,7 @@ class _RouteFolderDetailScreenState extends State<RouteFolderDetailScreen> {
       context,
       MaterialPageRoute(
         builder: (context) =>
-            CombinedRouteMapScreen(title: _folder.name, points: points),
+            CombinedRouteMapScreen(title: _folder.name, legs: legs),
       ),
     );
   }
@@ -196,7 +196,7 @@ class _RouteFolderDetailScreenState extends State<RouteFolderDetailScreen> {
       context,
       MaterialPageRoute(
         builder: (context) =>
-            CombinedRouteMapScreen(title: route.name, points: route.points),
+            CombinedRouteMapScreen(title: route.name, legs: [route.points]),
       ),
     );
   }

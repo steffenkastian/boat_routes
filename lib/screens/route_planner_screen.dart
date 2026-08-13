@@ -519,6 +519,11 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       canPublishAsRegatta: _auth.isAdmin,
     );
     setState(() => _addingEnabled = true);
+    // On Flutter web the GoogleMap platform view can receive the dialog's
+    // closing tap directly (same hazard as _guardNextMapTap elsewhere) —
+    // _addingEnabled alone doesn't cover the exact tap that dismisses the
+    // dialog, since it flips back to true right as that tap lands.
+    _guardNextMapTap();
 
     if (options == null) return;
 
@@ -679,6 +684,12 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   }
 
   void _showSavedRoutes() {
+    // Locks map-tap-to-add-point for the whole time this sheet (and any
+    // dialog nested inside it, e.g. the "Ordner erstellen" name prompt) is
+    // open — on Flutter web the GoogleMap platform view can otherwise
+    // receive taps meant for the sheet/dialog directly, silently adding
+    // stray points underneath.
+    setState(() => _addingEnabled = false);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -770,7 +781,10 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
           );
         },
       ),
-    ).then((_) => _guardNextMapTap());
+    ).then((_) {
+      setState(() => _addingEnabled = true);
+      _guardNextMapTap();
+    });
   }
 
   Future<void> _shareRoute(BoatRoute route) async {

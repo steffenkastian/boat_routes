@@ -15,6 +15,7 @@ class RouteMapView extends StatelessWidget {
     this.showDepth = false,
     this.pointIcons = const {},
     this.referenceRoute,
+    this.polylineSegments,
     super.key,
   });
 
@@ -35,6 +36,11 @@ class RouteMapView extends StatelessWidget {
   // An optional planned/regatta course drawn distinctly from `points`
   // (which represents the tapped waypoints or the live GPS track).
   final List<LatLng>? referenceRoute;
+  // When set, draws one polyline per segment instead of a single continuous
+  // one through all of `points` — used by CombinedRouteMapScreen so
+  // unrelated legs aren't visually joined by a straight line between the
+  // last point of one and the first point of the next.
+  final List<List<LatLng>>? polylineSegments;
 
   @override
   Widget build(BuildContext context) {
@@ -60,14 +66,25 @@ class RouteMapView extends StatelessWidget {
 
     markers.addAll(extraMarkers);
 
-    final polyline = Polyline(
-      polylineId: const PolylineId('route'),
-      color: Colors.blue,
-      width: 4,
-      points: points,
-    );
-
-    final polylines = {polyline};
+    final polylines = <Polyline>{};
+    final segments = polylineSegments;
+    if (segments != null) {
+      for (var i = 0; i < segments.length; i++) {
+        polylines.add(Polyline(
+          polylineId: PolylineId('route_$i'),
+          color: Colors.blue,
+          width: 4,
+          points: segments[i],
+        ));
+      }
+    } else {
+      polylines.add(Polyline(
+        polylineId: const PolylineId('route'),
+        color: Colors.blue,
+        width: 4,
+        points: points,
+      ));
+    }
     final reference = referenceRoute;
     if (reference != null && reference.isNotEmpty) {
       polylines.add(Polyline(
