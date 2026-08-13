@@ -73,3 +73,14 @@ class GpsFilterConfig {
   // fully rule out no matter how it's tuned.
   static const double maxGapSeconds = 60.0;
 }
+
+// Tuning for simplifyTrack (see track_simplifier.dart), applied once when a
+// Törn is saved to cut down how many points a long recorded track ends up
+// stored/synced/redrawn with.
+class TrackSimplificationConfig {
+  // A point is dropped if it's within this many meters of the straight
+  // line its neighbors would otherwise form. 5m keeps real course changes
+  // (e.g. tacking) intact while cutting GPS noise and near-straight
+  // stretches down to far fewer points.
+  static const double toleranceMeters = 5.0;
+}

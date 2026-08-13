@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import '../config.dart';
 import '../controllers/auth_controller.dart';
 import '../controllers/live_location_controller.dart';
 import '../controllers/mark_rounding_controller.dart';
@@ -18,6 +19,7 @@ import '../services/tour_notification_service.dart';
 import '../services/tour_storage_service.dart';
 import '../services/user_library_service.dart';
 import '../utils/geo_utils.dart';
+import '../utils/track_simplifier.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/hud_overlay.dart';
 import '../widgets/map_layers_menu.dart';
@@ -490,9 +492,19 @@ class _ToursScreenState extends State<ToursScreen> {
     );
     if (options == null) return;
 
+    // Cuts a long recorded track down to far fewer points before it's ever
+    // persisted — see track_simplifier.dart. A multi-hour Törn can
+    // otherwise accumulate thousands of points that get stored three times
+    // over (locally, in the cloud, in every share) and redrawn on every
+    // map render.
+    final simplifiedPoints = simplifyTrack(
+      points,
+      toleranceMeters: TrackSimplificationConfig.toleranceMeters,
+    );
+
     final tour = Tour(
       name: options.name,
-      points: points,
+      points: simplifiedPoints,
       startedAt: startedAt,
       endedAt: DateTime.now(),
     );
@@ -508,7 +520,7 @@ class _ToursScreenState extends State<ToursScreen> {
       await _regattaStorage.addRegatta(Regatta(
         name: options.name,
         plz: options.plz!,
-        points: points,
+        points: simplifiedPoints,
         createdAt: DateTime.now(),
       ));
     }
