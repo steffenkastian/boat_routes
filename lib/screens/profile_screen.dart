@@ -4,6 +4,7 @@ import '../controllers/auth_controller.dart';
 import '../models/shared_item.dart';
 import '../services/auth_service.dart';
 import '../services/share_service.dart';
+import '../services/sync_service.dart';
 import 'admin_stats_screen.dart';
 import 'feedback_screen.dart';
 import 'shared_item_screen.dart';
@@ -18,6 +19,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _auth = AuthController(AuthService());
   final _shareService = ShareService();
+  final _syncService = SyncService();
+  bool _syncing = false;
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   String? _sharedWithMeForEmail;
@@ -102,6 +105,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Future<void> _syncNow() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+
+    setState(() => _syncing = true);
+    final List<SyncResult> results;
+    try {
+      results = await _syncService.syncAll(uid);
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
+    if (!mounted) return;
+
+    if (results.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Alles bereits synchronisiert — nichts zu tun.')),
+      );
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Synchronisierung'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: results
+                .map((r) => ListTile(
+                      leading: Icon(
+                        r.success ? Icons.check_circle : Icons.error,
+                        color: r.success ? Colors.green : Colors.red,
+                      ),
+                      title: Text(r.label),
+                      subtitle: r.error != null ? Text(r.error!) : null,
+                    ))
+                .toList(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSignedIn() {
     final user = _auth.currentUser!;
     final sharedWithMe = _sharedWithMe;
@@ -118,6 +171,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ElevatedButton(
           onPressed: _auth.isBusy ? null : _auth.signOut,
           child: const Text('Abmelden'),
+        ),
+        const SizedBox(height: 16),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: _syncing
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.cloud_sync),
+          title: const Text('Jetzt synchronisieren'),
+          subtitle: const Text('Lädt lokal gespeicherte Routen/Törns/Ordner hoch'),
+          onTap: _syncing ? null : _syncNow,
         ),
         if (_auth.isAdmin) ...[
           const SizedBox(height: 16),
