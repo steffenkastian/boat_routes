@@ -130,6 +130,20 @@ class _RouteFolderDetailScreenState extends State<RouteFolderDetailScreen> {
     ));
   }
 
+  // Reorders by id rather than touching _folder.routeIds by raw index —
+  // _legs silently drops any id that no longer resolves to a saved route,
+  // so its indices don't necessarily line up 1:1 with routeIds once that's
+  // happened.
+  Future<void> _reorderLegs(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+    final reordered = List<BoatRoute>.of(_legs);
+    final moved = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, moved);
+    await _persist(
+      _folder.copyWith(routeIds: reordered.map((r) => r.id).toList()),
+    );
+  }
+
   Future<void> _deleteFolder() async {
     final confirmed = await confirmDialog(
       context,
@@ -259,30 +273,45 @@ class _RouteFolderDetailScreenState extends State<RouteFolderDetailScreen> {
                           ? const Center(
                               child: Text('Noch keine Routen in diesem Ordner'),
                             )
-                          : ListView.builder(
+                          : ReorderableListView.builder(
                               itemCount: legs.length,
+                              onReorder: _reorderLegs,
+                              buildDefaultDragHandles: false,
                               itemBuilder: (context, index) {
                                 final route = legs[index];
                                 final points = route.points;
                                 return ListTile(
+                                  key: ValueKey(route.id),
                                   leading: CircleAvatar(child: Text('${index + 1}')),
                                   title: Text(route.name),
                                   subtitle: Text(
                                     '${_formatDate(route.createdAt)}  •  ${totalDistanceNm(points).toStringAsFixed(1)} sm',
                                   ),
-                                  trailing: PopupMenuButton<String>(
-                                    onSelected: (value) {
-                                      if (value == 'view') _viewLeg(route);
-                                      if (value == 'remove') _removeRoute(route);
-                                    },
-                                    itemBuilder: (context) => const [
-                                      PopupMenuItem(
-                                        value: 'view',
-                                        child: Text('Route ansehen'),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      PopupMenuButton<String>(
+                                        onSelected: (value) {
+                                          if (value == 'view') _viewLeg(route);
+                                          if (value == 'remove') _removeRoute(route);
+                                        },
+                                        itemBuilder: (context) => const [
+                                          PopupMenuItem(
+                                            value: 'view',
+                                            child: Text('Route ansehen'),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'remove',
+                                            child: Text('Aus Ordner entfernen'),
+                                          ),
+                                        ],
                                       ),
-                                      PopupMenuItem(
-                                        value: 'remove',
-                                        child: Text('Aus Ordner entfernen'),
+                                      ReorderableDragStartListener(
+                                        index: index,
+                                        child: const Padding(
+                                          padding: EdgeInsets.only(left: 4),
+                                          child: Icon(Icons.drag_handle),
+                                        ),
                                       ),
                                     ],
                                   ),

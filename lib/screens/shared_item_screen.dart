@@ -17,6 +17,7 @@ import '../services/tour_folder_storage_service.dart';
 import '../services/tour_storage_service.dart';
 import '../services/user_library_service.dart';
 import '../utils/geo_utils.dart';
+import '../widgets/map_layers_menu.dart';
 import '../widgets/route_map_view.dart';
 import 'main_shell.dart';
 
@@ -56,6 +57,14 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
   bool _loading = false;
   String? _error;
   bool _saved = false;
+  bool _showSeaMarks = true;
+  bool _showDepth = false;
+  // Off by default here (unlike the other map screens) — a shared item is
+  // opened by whoever received the link, who's just looking at the track,
+  // not planning against it; course/distance labels mostly add clutter for
+  // that use case, so a deliberate opt-in fits better.
+  bool _showCourseAndDistance = false;
+  bool _showArrows = true;
 
   @override
   void initState() {
@@ -315,7 +324,25 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(item.name),
-        actions: [?_goToAppButton(context)],
+        actions: [
+          IconButton(
+            tooltip: 'Kartenebenen',
+            icon: const Icon(Icons.layers),
+            onPressed: () => showMapLayersMenu(
+              context,
+              showSeaMarks: _showSeaMarks,
+              onSeaMarksChanged: (value) => setState(() => _showSeaMarks = value),
+              showDepth: _showDepth,
+              onDepthChanged: (value) => setState(() => _showDepth = value),
+              showCourseAndDistance: _showCourseAndDistance,
+              onCourseAndDistanceChanged: (value) =>
+                  setState(() => _showCourseAndDistance = value),
+              showArrows: _showArrows,
+              onArrowsChanged: (value) => setState(() => _showArrows = value),
+            ),
+          ),
+          ?_goToAppButton(context),
+        ],
       ),
       body: Column(
         children: [
@@ -373,13 +400,25 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
                   ? legItems.map((leg) => leg.$2).toList()
                   : null,
               showPointMarkers: false,
+              showSeaMarks: _showSeaMarks,
+              showDepth: _showDepth,
               onTap: (_) {},
               onMapCreated: (_) {},
               extraMarkers: legItems.isNotEmpty
-                  ? legItems.asMap().entries.expand((entry) => _annotations
-                      .buildMarkers(entry.value.$2, idPrefix: 'shared_${entry.key}'))
+                  ? legItems.asMap().entries
+                      .expand((entry) => _annotations.buildMarkers(
+                            entry.value.$2,
+                            idPrefix: 'shared_${entry.key}',
+                            showCourseLabels: _showCourseAndDistance,
+                            showArrows: _showArrows,
+                          ))
                       .toSet()
-                  : _annotations.buildMarkers(points, idPrefix: 'shared'),
+                  : _annotations.buildMarkers(
+                      points,
+                      idPrefix: 'shared',
+                      showCourseLabels: _showCourseAndDistance,
+                      showArrows: _showArrows,
+                    ),
             ),
           ),
         ],
