@@ -513,7 +513,20 @@ class _ToursScreenState extends State<ToursScreen> {
 
     final uid = _auth.currentUser?.uid;
     if (uid != null) {
-      await _userLibrary.addTour(uid, tour);
+      try {
+        await _userLibrary.addTour(uid, tour);
+      } catch (e) {
+        // Without this, a failed upload here (e.g. a transient network
+        // error right as the Törn is saved) left the Törn silently
+        // local-only forever — the next login-triggered merge only
+        // re-offers it if a fresh sign-in transition happens, which an
+        // already-logged-in session might not see again for a long time.
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Cloud-Sync fehlgeschlagen: $e')),
+          );
+        }
+      }
     }
 
     if (options.publishAsRegatta) {

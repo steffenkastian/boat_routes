@@ -10,7 +10,6 @@ import '../services/tour_storage_service.dart';
 import '../services/user_library_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/track_simplifier.dart';
-import '../widgets/confirm_dialog.dart';
 import '../widgets/map_layers_menu.dart';
 import '../widgets/route_map_view.dart';
 
@@ -18,8 +17,10 @@ import '../widgets/route_map_view.dart';
 // direction-arrow/course/distance/Start-Finish annotations used for a
 // regatta reference route, so a past Törn reads the same way. Also lets an
 // already-saved Törn (recorded before track simplification existed, or
-// just to test it against a real track) be simplified after the fact and
-// overwritten in place.
+// just to try it against a real track) be simplified after the fact — as a
+// live preview (dashed orange overlay + an adjustable tolerance) rather
+// than committing immediately, with an explicit choice to keep the
+// simplified version or the original.
 class TourDetailScreen extends StatefulWidget {
   const TourDetailScreen({required this.tour, super.key});
 
@@ -41,6 +42,12 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
   bool _showCourseAndDistance = true;
   bool _showArrows = true;
 
+  // Non-null while previewing a simplification — the original track stays
+  // untouched (and displayed) until the user explicitly keeps this.
+  double _previewTolerance = TrackSimplificationConfig.toleranceMeters;
+  List<LatLng>? _previewPoints;
+  bool get _isPreviewing => _previewPoints != null;
+
   @override
   void initState() {
     super.initState();
@@ -59,35 +66,28 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
 
   void _onAnnotationsChanged() => setState(() {});
 
-  Future<void> _simplifyTrack() async {
-    final simplified = simplifyTrack(
-      _tour.points,
-      toleranceMeters: TrackSimplificationConfig.toleranceMeters,
-    );
-    if (simplified.length == _tour.points.length) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Strecke ist bereits vereinfacht — keine Punkte entfernbar.'),
-        ),
-      );
-      return;
-    }
+  void _startPreview() {
+    setState(() {
+      _previewTolerance = TrackSimplificationConfig.toleranceMeters;
+      _previewPoints =
+          simplifyTrack(_tour.points, toleranceMeters: _previewTolerance);
+    });
+  }
 
-    final beforeCount = _tour.points.length;
-    final afterCount = simplified.length;
-    final beforeNm = totalDistanceNm(_tour.points);
-    final afterNm = totalDistanceNm(simplified);
-    final reductionPercent = (100 - (afterCount / beforeCount * 100)).round();
+  void _updatePreviewTolerance(double value) {
+    setState(() {
+      _previewTolerance = value;
+      _previewPoints = simplifyTrack(_tour.points, toleranceMeters: value);
+    });
+  }
 
-    final confirmed = await confirmDialog(
-      context,
-      title: 'Strecke vereinfachen?',
-      message: '$beforeCount → $afterCount Punkte (-$reductionPercent %)\n'
-          '${beforeNm.toStringAsFixed(2)} sm → ${afterNm.toStringAsFixed(2)} sm\n\n'
-          'Ersetzt die gespeicherte Strecke dieses Törns.',
-      confirmLabel: 'Vereinfachen',
-    );
-    if (!confirmed || !mounted) return;
+  void _discardPreview() {
+    setState(() => _previewPoints = null);
+  }
+
+  Future<void> _keepSimplified() async {
+    final simplified = _previewPoints;
+    if (simplified == null) return;
 
     final updated = Tour(
       id: _tour.id,
@@ -106,18 +106,24 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
     }
 
     if (!mounted) return;
+    final beforeCount = _tour.points.length;
     setState(() {
       _tour = updated;
+      _previewPoints = null;
       _annotations.ensureIconsFor(updated.points);
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Strecke vereinfacht: $beforeCount → $afterCount Punkte.')),
+      SnackBar(
+        content:
+            Text('Strecke vereinfacht gespeichert: $beforeCount → ${updated.points.length} Punkte.'),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final points = _tour.points;
+    final previewPoints = _previewPoints;
     final initialCamera = CameraPosition(
       target: points.isNotEmpty ? points.first : const LatLng(54.382440, 11.145867),
       zoom: 12,
@@ -127,11 +133,12 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
       appBar: AppBar(
         title: Text(_tour.name),
         actions: [
-          IconButton(
-            tooltip: 'Strecke vereinfachen (${points.length} Punkte)',
-            icon: const Icon(Icons.auto_fix_high),
-            onPressed: _simplifyTrack,
-          ),
+          if (!_isPreviewing)
+            IconButton(
+              tooltip: 'Strecke vereinfachen (${points.length} Punkte)',
+              icon: const Icon(Icons.auto_fix_high),
+              onPressed: _startPreview,
+            ),
           IconButton(
             tooltip: 'Kartenebenen',
             icon: const Icon(Icons.layers),
@@ -150,20 +157,81 @@ class _TourDetailScreenState extends State<TourDetailScreen> {
           ),
         ],
       ),
-      body: RouteMapView(
-        initialCamera: initialCamera,
-        points: points,
-        showPointMarkers: false,
-        showSeaMarks: _showSeaMarks,
-        showDepth: _showDepth,
-        onTap: (_) {},
-        onMapCreated: (_) {},
-        extraMarkers: _annotations.buildMarkers(
-          points,
-          idPrefix: 'tour',
-          showCourseLabels: _showCourseAndDistance,
-          showArrows: _showArrows,
-        ),
+      body: Column(
+        children: [
+          Expanded(
+            child: RouteMapView(
+              initialCamera: initialCamera,
+              points: points,
+              // Dashed orange overlay of the simplified candidate, drawn
+              // over the original (solid blue) — same visual language as
+              // a loaded reference route elsewhere in the app.
+              referenceRoute: previewPoints,
+              showPointMarkers: false,
+              showSeaMarks: _showSeaMarks,
+              showDepth: _showDepth,
+              onTap: (_) {},
+              onMapCreated: (_) {},
+              extraMarkers: _annotations.buildMarkers(
+                points,
+                idPrefix: 'tour',
+                showCourseLabels: _showCourseAndDistance,
+                showArrows: _showArrows,
+              ),
+            ),
+          ),
+          if (_isPreviewing && previewPoints != null)
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '${points.length} → ${previewPoints.length} Punkte  •  '
+                      '${totalDistanceNm(points).toStringAsFixed(2)} sm → '
+                      '${totalDistanceNm(previewPoints).toStringAsFixed(2)} sm',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    Row(
+                      children: [
+                        const Text('Toleranz'),
+                        Expanded(
+                          child: Slider(
+                            min: 1,
+                            max: 30,
+                            divisions: 29,
+                            value: _previewTolerance,
+                            label: '${_previewTolerance.round()} m',
+                            onChanged: _updatePreviewTolerance,
+                          ),
+                        ),
+                        Text('${_previewTolerance.round()} m'),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: _discardPreview,
+                            child: const Text('Original behalten'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: _keepSimplified,
+                            child: const Text('Vereinfachte Version speichern'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
