@@ -6,11 +6,12 @@ import 'dart:math';
 // just for this. Timestamp keeps it roughly sortable; the random suffix
 // covers same-microsecond collisions.
 String generateLocalId() {
-  // Not `1 << 32`: on the web compile target, Random.nextInt(1 << 32)
-  // throws "RangeError: max must be in range 0 < max ≤ 2^32, was 0" —
-  // the shift evaluates to 0 there instead of 4294967296. Staying one
-  // below the boundary avoids whatever web-specific bit-masking bug that
-  // triggers, while giving up only a single value's worth of entropy.
-  final random = Random().nextInt((1 << 32) - 1).toRadixString(36);
+  // Not `1 << 32` (or any expression built from it): on the web compile
+  // target, that shift evaluates to 0 rather than 4294967296 — confirmed
+  // by Random.nextInt(1 << 32) throwing "max ... was 0", and
+  // Random.nextInt((1 << 32) - 1) throwing "max ... was -1" right after.
+  // A plain literal sidesteps whatever web-specific 32-bit truncation
+  // causes that, on any compile target.
+  final random = Random().nextInt(4294967295).toRadixString(36);
   return '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}$random';
 }
