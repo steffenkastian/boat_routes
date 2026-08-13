@@ -201,11 +201,15 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
     );
   }
 
-  void _viewDayTour(Tour tour) {
-    Navigator.push(
+  Future<void> _viewDayTour(Tour tour) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => TourDetailScreen(tour: tour)),
     );
+    // TourDetailScreen can overwrite this Törn in place (track
+    // simplification) — without reloading, _allTours would keep holding
+    // the pre-edit copy and re-opening it would show the old points again.
+    if (mounted) _load();
   }
 
   void _editTour(Tour tour) {

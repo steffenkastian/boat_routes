@@ -726,11 +726,16 @@ class _ToursScreenState extends State<ToursScreen> {
     return 'Kurs: $course°  •  Abstand: ${distance.toStringAsFixed(2)} sm';
   }
 
-  void _viewTour(Tour tour) {
-    Navigator.push(
+  Future<void> _viewTour(Tour tour) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => TourDetailScreen(tour: tour)),
     );
+    // TourDetailScreen can overwrite this Törn in place (track
+    // simplification) — without reloading, _savedTours would keep
+    // holding the pre-edit copy and re-opening it would show the old
+    // points again.
+    if (mounted) _loadTours();
   }
 
   String _tourSubtitle(Tour tour) {
