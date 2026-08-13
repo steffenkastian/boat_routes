@@ -30,6 +30,25 @@ double totalDistanceNm(List<LatLng> points) {
 
 double metersPerSecondToKnots(double mps) => mps * 1.94384;
 
+// The smallest LatLngBounds containing every point — used to zoom a map so
+// a whole track fits on screen. Callers must pass a non-empty list.
+LatLngBounds boundsFor(List<LatLng> points) {
+  var minLat = points.first.latitude;
+  var maxLat = points.first.latitude;
+  var minLng = points.first.longitude;
+  var maxLng = points.first.longitude;
+  for (final p in points.skip(1)) {
+    if (p.latitude < minLat) minLat = p.latitude;
+    if (p.latitude > maxLat) maxLat = p.latitude;
+    if (p.longitude < minLng) minLng = p.longitude;
+    if (p.longitude > maxLng) maxLng = p.longitude;
+  }
+  return LatLngBounds(
+    southwest: LatLng(minLat, minLng),
+    northeast: LatLng(maxLat, maxLng),
+  );
+}
+
 // True course over ground, computed from two consecutive GPS fixes rather
 // than the browser/device-reported Position.heading — that field is
 // unreliable across platforms (commonly stuck at 0.0 on desktop browsers,

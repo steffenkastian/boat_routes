@@ -403,7 +403,18 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
               showSeaMarks: _showSeaMarks,
               showDepth: _showDepth,
               onTap: (_) {},
-              onMapCreated: (_) {},
+              onMapCreated: (controller) {
+                // newLatLngBounds needs the map's final on-screen size to
+                // compute a zoom level, which isn't settled yet the instant
+                // onMapCreated fires — a post-frame callback is the
+                // standard way to defer until it is.
+                if (points.length < 2) return;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  controller.moveCamera(
+                    CameraUpdate.newLatLngBounds(boundsFor(points), 40),
+                  );
+                });
+              },
               extraMarkers: legItems.isNotEmpty
                   ? legItems.asMap().entries
                       .expand((entry) => _annotations.buildMarkers(
