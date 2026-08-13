@@ -47,4 +47,19 @@ class TourStorageService {
     raw[index] = jsonEncode(renamed.toJson());
     await prefs.setStringList(_prefsKey, raw);
   }
+
+  // Overwrites the stored tour sharing [tour]'s id in place (e.g. after
+  // re-editing its track in the route planner) — every caller only ever
+  // knows a tour's id, not which SharedPreferences index it happens to be
+  // stored at. No-ops if the id no longer exists (e.g. deleted elsewhere
+  // in the meantime).
+  Future<void> upsertTour(Tour tour) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_prefsKey) ?? [];
+    final index = raw.indexWhere(
+        (r) => (jsonDecode(r) as Map<String, dynamic>)['id'] == tour.id);
+    if (index == -1) return;
+    raw[index] = jsonEncode(tour.toJson());
+    await prefs.setStringList(_prefsKey, raw);
+  }
 }

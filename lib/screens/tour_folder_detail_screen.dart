@@ -21,9 +21,18 @@ import 'tour_detail_screen.dart';
 // once. Owns its own storage interactions rather than receiving live state
 // from ToursScreen, which just reloads its folder list when this is popped.
 class TourFolderDetailScreen extends StatefulWidget {
-  const TourFolderDetailScreen({required this.folder, super.key});
+  const TourFolderDetailScreen({
+    required this.folder,
+    this.onEditTour,
+    super.key,
+  });
 
   final TourFolder folder;
+  // "Törn bearbeiten" in a day's menu calls this (with that Tour) and pops
+  // this screen — threaded through from ToursScreen, which hands it off to
+  // MainShell to switch to Route planen with the Tour's points loaded for
+  // editing/overwriting.
+  final ValueChanged<Tour>? onEditTour;
 
   @override
   State<TourFolderDetailScreen> createState() =>
@@ -199,6 +208,14 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
     );
   }
 
+  void _editTour(Tour tour) {
+    widget.onEditTour?.call(tour);
+    // Reveals MainShell (already switched to Route planen by the callback
+    // above) — this screen was pushed on top of it, so the tab switch
+    // alone wouldn't be visible without popping back to it too.
+    Navigator.pop(context);
+  }
+
   String _formatDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}';
 
@@ -280,12 +297,17 @@ class _TourFolderDetailScreenState extends State<TourFolderDetailScreen> {
                                   trailing: PopupMenuButton<String>(
                                     onSelected: (value) {
                                       if (value == 'view') _viewDayTour(tour);
+                                      if (value == 'edit') _editTour(tour);
                                       if (value == 'remove') _removeTour(tour);
                                     },
                                     itemBuilder: (context) => const [
                                       PopupMenuItem(
                                         value: 'view',
                                         child: Text('Route ansehen'),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'edit',
+                                        child: Text('Törn bearbeiten'),
                                       ),
                                       PopupMenuItem(
                                         value: 'remove',

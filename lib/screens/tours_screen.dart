@@ -33,6 +33,8 @@ class ToursScreen extends StatefulWidget {
     this.referenceRoute,
     this.referenceRouteLabel,
     this.onEditRoute,
+    this.onEditTour,
+    this.tourListRefreshRequestId = 0,
     super.key,
   });
 
@@ -44,6 +46,15 @@ class ToursScreen extends StatefulWidget {
   // referenceRoute) to hand off to MainShell, which switches to Route
   // planen with those points loaded for editing.
   final ValueChanged<List<LatLng>>? onEditRoute;
+  // TourFolderDetailScreen's "Törn bearbeiten" action calls this (threaded
+  // through when this screen pushes that detail screen) to hand off to
+  // MainShell, which switches to Route planen with that Tour's points
+  // loaded and offers overwriting it in place there.
+  final ValueChanged<Tour>? onEditTour;
+  // Bumped by MainShell after a Tour was overwritten via the route
+  // planner — reloads _savedTours since this screen, as an IndexedStack
+  // sibling, otherwise never notices a change made on another tab.
+  final int tourListRefreshRequestId;
 
   @override
   State<ToursScreen> createState() => _ToursScreenState();
@@ -159,6 +170,9 @@ class _ToursScreenState extends State<ToursScreen> {
               : null;
         }
       });
+    }
+    if (widget.tourListRefreshRequestId != oldWidget.tourListRefreshRequestId) {
+      _loadTours();
     }
   }
 
@@ -300,7 +314,12 @@ class _ToursScreenState extends State<ToursScreen> {
   Future<void> _openFolder(TourFolder folder) async {
     await Navigator.push<void>(
       context,
-      MaterialPageRoute(builder: (context) => TourFolderDetailScreen(folder: folder)),
+      MaterialPageRoute(
+        builder: (context) => TourFolderDetailScreen(
+          folder: folder,
+          onEditTour: widget.onEditTour,
+        ),
+      ),
     );
     // The detail screen manages its own storage (rename/add/remove Törns,
     // delete) — simplest to just reload rather than thread every possible

@@ -6,12 +6,14 @@ import '../controllers/live_location_controller.dart';
 import '../models/boat_route.dart';
 import '../models/regatta.dart';
 import '../models/route_folder.dart';
+import '../models/tour.dart';
 import '../services/auth_service.dart';
 import '../services/location_service.dart';
 import '../services/regatta_storage_service.dart';
 import '../services/route_folder_storage_service.dart';
 import '../services/route_storage_service.dart';
 import '../services/share_service.dart';
+import '../services/tour_storage_service.dart';
 import '../services/user_library_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/marker_icon_factory.dart';
@@ -31,6 +33,9 @@ class RoutePlannerScreen extends StatefulWidget {
     required this.onStartTour,
     this.externalRoute,
     this.externalRouteRequestId = 0,
+    this.externalTourToEdit,
+    this.externalTourEditRequestId = 0,
+    this.onTourUpdated,
     super.key,
   });
 
@@ -45,6 +50,18 @@ class RoutePlannerScreen extends StatefulWidget {
   // taps would otherwise pass an unchanged list reference and silently do
   // nothing the second time.
   final int externalRouteRequestId;
+  // Set by MainShell when the user taps "Törn bearbeiten" on a saved Törn
+  // (see TourFolderDetailScreen) — loads that Tour's points into the canvas
+  // and offers overwriting it in place once edited, unlike externalRoute
+  // above (a plain point list with no "save back to X" identity).
+  final Tour? externalTourToEdit;
+  // Same reload-trigger role as externalRouteRequestId, for
+  // externalTourToEdit.
+  final int externalTourEditRequestId;
+  // Called after successfully overwriting externalTourToEdit's points —
+  // lets MainShell tell ToursScreen (an IndexedStack sibling that
+  // otherwise never notices this) to reload its list.
+  final ValueChanged<Tour>? onTourUpdated;
 
   @override
   State<RoutePlannerScreen> createState() => _RoutePlannerScreenState();
@@ -58,6 +75,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
 
   final _routeStorage = RouteStorageService();
   final _folderStorage = RouteFolderStorageService();
+  final _tourStorage = TourStorageService();
   final _regattaStorage = RegattaStorageService();
   final _userLibrary = UserLibraryService();
   final _shareService = ShareService();
@@ -68,6 +86,11 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
   GoogleMapController? _mapController;
   List<BoatRoute> _savedRoutes = [];
   List<RouteFolder> _savedFolders = [];
+  // The Tour currently loaded via "Törn bearbeiten", if any — offers
+  // overwriting it in place instead of only saving the canvas as a new
+  // route. Cleared whenever the canvas is repurposed for something else
+  // (a new route, a different saved route loaded, ...).
+  Tour? _editingTour;
   bool _addingEnabled = true;
   bool _hasAutoCenteredOnLocation = false;
   bool _mapTapGuard = false;
@@ -106,6 +129,19 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         _points
           ..clear()
           ..addAll(external);
+        _editingTour = null;
+      });
+      _ensureMarkerIcons();
+    }
+
+    final tourToEdit = widget.externalTourToEdit;
+    if (tourToEdit != null &&
+        widget.externalTourEditRequestId != oldWidget.externalTourEditRequestId) {
+      setState(() {
+        _points
+          ..clear()
+          ..addAll(tourToEdit.points);
+        _editingTour = tourToEdit;
       });
       _ensureMarkerIcons();
     }
@@ -494,6 +530,7 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
       _points
         ..clear()
         ..addAll(route.points);
+      _editingTour = null;
     });
     _ensureMarkerIcons();
   }
@@ -557,6 +594,49 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
     }
   }
 
+  // Overwrites _editingTour's points in place with whatever's currently
+  // drawn — the "Törn bearbeiten" counterpart to _saveRoute, which always
+  // creates a brand-new BoatRoute instead.
+  Future<void> _overwriteTour() async {
+    final tour = _editingTour;
+    if (tour == null || _points.isEmpty) return;
+
+    final confirmed = await confirmDialog(
+      context,
+      title: 'Törn aktualisieren?',
+      message:
+          '"${tour.name}" wird mit der aktuell gezeichneten Strecke überschrieben.',
+      confirmLabel: 'Überschreiben',
+    );
+    if (!confirmed || !mounted) return;
+
+    final updated = Tour(
+      // Keeps the same id — see TourStorageService.upsertTour — so this
+      // overwrites the existing entry (locally and in the cloud) instead
+      // of creating a second one.
+      id: tour.id,
+      name: tour.name,
+      points: List.of(_points),
+      startedAt: tour.startedAt,
+      endedAt: tour.endedAt,
+    );
+    await _tourStorage.upsertTour(updated);
+
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      try {
+        await _userLibrary.addTour(uid, updated);
+      } catch (_) {}
+    }
+
+    widget.onTourUpdated?.call(updated);
+    if (!mounted) return;
+    setState(() => _editingTour = updated);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Törn aktualisiert.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final mapAndHud = Stack(
@@ -590,6 +670,32 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
           statusMessage: _location.statusMessage,
           onTap: _jumpToCurrentLocation,
         ),
+        if (_editingTour case final tour?)
+          Positioned(
+            left: 8,
+            top: 8,
+            child: Card(
+              color: Colors.black.withValues(alpha: 0.6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Bearbeite Törn: ${tour.name}',
+                      style: const TextStyle(color: Colors.white, fontSize: 12),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white, size: 16),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => setState(() => _editingTour = null),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
       ],
     );
 
@@ -624,13 +730,21 @@ class _RoutePlannerScreenState extends State<RoutePlannerScreen> {
         onPressed: () {
           setState(() {
             _points.clear();
+            _editingTour = null;
           });
         },
       ),
       IconButton(
+        tooltip: 'Als neue Route speichern',
         icon: const Icon(Icons.save),
         onPressed: _saveRoute,
       ),
+      if (_editingTour != null)
+        IconButton(
+          tooltip: 'Törn aktualisieren',
+          icon: const Icon(Icons.save_as),
+          onPressed: _overwriteTour,
+        ),
     ];
 
     return LayoutBuilder(

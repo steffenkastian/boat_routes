@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../models/regatta.dart';
+import '../models/tour.dart';
 import 'profile_screen.dart';
 import 'regatta_screen.dart';
 import 'route_planner_screen.dart';
@@ -36,6 +37,17 @@ class _MainShellState extends State<MainShell> {
   // the canvas, which comparing _routeToEdit by reference alone wouldn't
   // catch.
   int _editRouteRequestId = 0;
+  // Set by TourFolderDetailScreen's "Törn bearbeiten" action — distinct
+  // from _routeToEdit above (a plain point list for the live-tracking
+  // reference route) since RoutePlannerScreen needs the whole Tour here to
+  // offer overwriting it in place once edited.
+  Tour? _tourToEdit;
+  int _editTourRequestId = 0;
+  // Bumped after RoutePlannerScreen overwrites a Tour in place, so
+  // ToursScreen — an IndexedStack sibling that otherwise never notices
+  // changes made on another tab — reloads its list instead of showing the
+  // now-stale points.
+  int _tourListRefreshRequestId = 0;
 
   void _onRegattaSelected(Regatta regatta) {
     setState(() {
@@ -61,6 +73,18 @@ class _MainShellState extends State<MainShell> {
     });
   }
 
+  void _onEditTour(Tour tour) {
+    setState(() {
+      _tourToEdit = tour;
+      _editTourRequestId++;
+      _selectedIndex = 0;
+    });
+  }
+
+  void _onTourOverwritten(Tour tour) {
+    setState(() => _tourListRefreshRequestId++);
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -68,12 +92,17 @@ class _MainShellState extends State<MainShell> {
         onStartTour: _onStartTour,
         externalRoute: _routeToEdit,
         externalRouteRequestId: _editRouteRequestId,
+        externalTourToEdit: _tourToEdit,
+        externalTourEditRequestId: _editTourRequestId,
+        onTourUpdated: _onTourOverwritten,
       ),
       RegattaScreen(onRegattaSelected: _onRegattaSelected),
       ToursScreen(
         referenceRoute: _referenceRoute,
         referenceRouteLabel: _referenceRouteLabel,
         onEditRoute: _onEditRoute,
+        onEditTour: _onEditTour,
+        tourListRefreshRequestId: _tourListRefreshRequestId,
       ),
       const ProfileScreen(),
     ];
