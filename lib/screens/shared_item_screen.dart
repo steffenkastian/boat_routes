@@ -406,10 +406,16 @@ class _SharedItemScreenState extends State<SharedItemScreen> {
               onMapCreated: (controller) {
                 // newLatLngBounds needs the map's final on-screen size to
                 // compute a zoom level, which isn't settled yet the instant
-                // onMapCreated fires — a post-frame callback is the
-                // standard way to defer until it is.
+                // onMapCreated fires. Not addPostFrameCallback: that only
+                // fires on the next frame Flutter actually *renders*, and
+                // if nothing else is triggering a rebuild right then (e.g.
+                // this screen's marker-icon baking is still slowly running
+                // in the background), it can end up waiting several
+                // seconds for that unrelated rebuild instead of firing
+                // promptly. A short wall-clock delay has no such
+                // dependency.
                 if (points.length < 2) return;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
+                Future.delayed(const Duration(milliseconds: 150), () {
                   controller.moveCamera(
                     CameraUpdate.newLatLngBounds(boundsFor(points), 40),
                   );
