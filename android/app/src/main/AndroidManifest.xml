@@ -16,6 +16,13 @@
          service still runs (tracking keeps working) but the notification is
          silently never shown. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Lets the app show the system "exempt from battery optimization"
+         dialog (LocationService.ensureIgnoreBatteryOptimizations) —
+         confirmed via live testing to be necessary: without it, a real
+         device delivered zero position fixes for the entire duration the
+         screen was locked, despite the foreground service otherwise
+         being correctly configured. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <application
         android:label="boat_routes_web"
         android:name="${applicationName}"

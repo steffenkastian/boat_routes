@@ -83,6 +83,10 @@ class _ToursScreenState extends State<ToursScreen> {
   List<Tour> _savedTours = [];
   List<TourFolder> _savedFolders = [];
   bool _isTracking = false;
+  // See _onLocationChanged — centers the tracking map on the first fix
+  // after a Törn starts, since it otherwise stays at the hardcoded
+  // default camera regardless of where the Törn actually is.
+  bool _hasAutoCenteredTracking = false;
   DateTime? _startedAt;
   bool _showSeaMarks = true;
   bool _showDepth = false;
@@ -199,6 +203,19 @@ class _ToursScreenState extends State<ToursScreen> {
       final here = LatLng(position.latitude, position.longitude);
       _markRounding?.updateWithPosition(here);
       _updateTourNotification(here);
+      // The tracking map otherwise stays at its hardcoded default camera
+      // (a fixed Baltic Sea position) until manually recentered via the
+      // HUD tap — meaning the recorded track is being drawn correctly,
+      // just entirely off-screen if that default is nowhere near the
+      // Törn's actual location. Centers once per Törn, right as the first
+      // fix after starting arrives; doesn't repeat on every later fix so
+      // it doesn't fight a manual pan/zoom mid-Törn.
+      if (!_hasAutoCenteredTracking) {
+        _hasAutoCenteredTracking = true;
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(here, 15),
+        );
+      }
     }
     setState(() {});
   }
@@ -403,6 +420,7 @@ class _ToursScreenState extends State<ToursScreen> {
     final route = widget.referenceRoute;
     setState(() {
       _isTracking = true;
+      _hasAutoCenteredTracking = false;
       _startedAt = DateTime.now();
       _queriedPoint = null;
       // Otherwise a "Routenplanung beenden" from a previous Törn (against
@@ -439,6 +457,21 @@ class _ToursScreenState extends State<ToursScreen> {
     // live-distance one below both still get created but are never shown —
     // tracking itself still works either way.
     await _location.ensureNotificationPermission();
+    // Confirmed via live testing to matter a lot: without this, a real
+    // device delivered zero fixes for the entire duration the screen was
+    // locked, even with the foreground service otherwise correctly set
+    // up — a stronger, OS-level guarantee than a manufacturer's own
+    // battery-saver toggle. Tracking still works if declined, just with a
+    // higher risk of the OS suspending fixes while the screen is locked.
+    if (!await _location.ensureIgnoreBatteryOptimizations() && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Akkuoptimierung nicht deaktiviert — Standort-Updates können bei gesperrtem Bildschirm unregelmäßig werden.',
+          ),
+        ),
+      );
+    }
 
     // Upgrades to Android's foreground-service mode now that a Törn is
     // actually being tracked — this is what shows the "Törn läuft"
@@ -783,7 +816,24 @@ class _ToursScreenState extends State<ToursScreen> {
               points: _location.track,
               showPointMarkers: false,
               onTap: _handleTrackingTap,
-              onMapCreated: (controller) => _mapController = controller,
+              onMapCreated: (controller) {
+                _mapController = controller;
+                // Covers the case where a position is already known by
+                // the time this map is (re)created (e.g. returning to
+                // this tab mid-Törn) — _onLocationChanged's centering
+                // only fires on the *next* fix, which could be a while
+                // out if the signal is currently sparse.
+                final position = _location.currentPosition;
+                if (!_hasAutoCenteredTracking && position != null) {
+                  _hasAutoCenteredTracking = true;
+                  controller.moveCamera(
+                    CameraUpdate.newLatLngZoom(
+                      LatLng(position.latitude, position.longitude),
+                      15,
+                    ),
+                  );
+                }
+              },
               extraMarkers: {
                 if (_location.boatMarker case final marker?) marker,
                 if (_followingReferenceRoute)

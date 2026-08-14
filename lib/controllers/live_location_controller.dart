@@ -148,6 +148,13 @@ class LiveLocationController extends ChangeNotifier {
   Future<bool> ensureNotificationPermission() =>
       _locationService.ensureNotificationPermission();
 
+  // Android-only (no-op elsewhere): shows the system dialog to exempt this
+  // app from battery optimization — see LocationService for why this is
+  // worth asking for separately from the manufacturer's own battery-saver
+  // settings.
+  Future<bool> ensureIgnoreBatteryOptimizations() =>
+      _locationService.ensureIgnoreBatteryOptimizations();
+
   // Called both automatically on startup and from a manual tap on the
   // location button. The manual tap matters on mobile browsers, which
   // often only show the location permission prompt when triggered
@@ -232,6 +239,10 @@ class LiveLocationController extends ChangeNotifier {
       _positionSub =
           _locationService.positionStream(background: background).listen(
         (position) {
+          debugPrint(
+              'DIAG fix received lat=${position.latitude} lng=${position.longitude} '
+              'accuracy=${position.accuracy} time=${position.timestamp} '
+              'isRecording=$isRecording wallClock=${DateTime.now()}');
           final fix = LatLng(position.latitude, position.longitude);
           final lastFix = _lastFixForHeading;
           final lastTime = _lastFixTime;
@@ -334,11 +345,17 @@ class LiveLocationController extends ChangeNotifier {
           _safeNotify();
         },
         onError: (Object error) {
+          debugPrint('DIAG stream onError: $error at ${DateTime.now()}');
           streamError = 'Standort nicht verfügbar';
           _safeNotify();
         },
+        onDone: () {
+          debugPrint('DIAG stream onDone (completed!) at ${DateTime.now()}');
+        },
       );
-    } catch (_) {
+      debugPrint('DIAG positionStream subscribed, background=$background at ${DateTime.now()}');
+    } catch (e) {
+      debugPrint('DIAG positionStream() threw: $e at ${DateTime.now()}');
       streamError = 'Standort-Stream konnte nicht gestartet werden';
       _safeNotify();
     }
