@@ -234,6 +234,10 @@ class LiveLocationController extends ChangeNotifier {
       _positionSub =
           _locationService.positionStream(background: background).listen(
         (position) {
+          debugPrint(
+              'DIAG fix received lat=${position.latitude} lng=${position.longitude} '
+              'accuracy=${position.accuracy} provider=${position.isMocked} '
+              'time=${position.timestamp}');
           final fix = LatLng(position.latitude, position.longitude);
           final lastFix = _lastFixForHeading;
           final lastTime = _lastFixTime;
@@ -276,11 +280,15 @@ class LiveLocationController extends ChangeNotifier {
           // silently leaving the UI stuck on "GPS wird gesucht…" forever.
           if (!forceAccept &&
               position.accuracy > GpsFilterConfig.maxHorizontalAccuracyMeters) {
+            debugPrint(
+                'DIAG rejected: accuracy ${position.accuracy} > ${GpsFilterConfig.maxHorizontalAccuracyMeters} (forceAccept=$forceAccept gapForced=$gapForced elapsed=$elapsedSeconds)');
             return;
           }
           // Applies unconditionally, gap or not — see
           // maxHorizontalAccuracyMetersForced for why.
           if (position.accuracy > GpsFilterConfig.maxHorizontalAccuracyMetersForced) {
+            debugPrint(
+                'DIAG rejected: accuracy ${position.accuracy} > forced ceiling ${GpsFilterConfig.maxHorizontalAccuracyMetersForced}');
             return;
           }
 
@@ -299,6 +307,8 @@ class LiveLocationController extends ChangeNotifier {
             // enough on its own, and let every such fix through as a sharp
             // spike jumping out to a wrong position and back.
             if (currentSpeedMps > GpsFilterConfig.maxPlausibleSpeedMps) {
+              debugPrint(
+                  'DIAG rejected: speed $currentSpeedMps > ${GpsFilterConfig.maxPlausibleSpeedMps} (forceAccept=$forceAccept elapsed=$elapsedSeconds dist=${distanceMeters(lastFix, fix)})');
               return;
             }
             final lastSpeed = _lastSpeedMps;
@@ -310,11 +320,15 @@ class LiveLocationController extends ChangeNotifier {
               if (acceleration > GpsFilterConfig.maxPlausibleAccelerationMps2) {
                 // The speed alone was plausible, but reaching it that
                 // fast from the last accepted fix isn't.
+                debugPrint(
+                    'DIAG rejected: acceleration $acceleration > ${GpsFilterConfig.maxPlausibleAccelerationMps2}');
                 return;
               }
             }
           }
 
+          debugPrint(
+              'DIAG ACCEPTED accuracy=${position.accuracy} forceAccept=$forceAccept elapsed=$elapsedSeconds');
           _fixTimeoutTimer?.cancel();
           currentPosition = position;
           streamError = null;
