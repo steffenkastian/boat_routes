@@ -148,13 +148,6 @@ class LiveLocationController extends ChangeNotifier {
   Future<bool> ensureNotificationPermission() =>
       _locationService.ensureNotificationPermission();
 
-  // Android-only (no-op elsewhere): shows the system dialog to exempt this
-  // app from battery optimization — see LocationService for why this is
-  // worth asking for separately from the manufacturer's own battery-saver
-  // settings.
-  Future<bool> ensureIgnoreBatteryOptimizations() =>
-      _locationService.ensureIgnoreBatteryOptimizations();
-
   // Called both automatically on startup and from a manual tap on the
   // location button. The manual tap matters on mobile browsers, which
   // often only show the location permission prompt when triggered
@@ -239,10 +232,6 @@ class LiveLocationController extends ChangeNotifier {
       _positionSub =
           _locationService.positionStream(background: background).listen(
         (position) {
-          debugPrint(
-              'DIAG fix received lat=${position.latitude} lng=${position.longitude} '
-              'accuracy=${position.accuracy} provider=${position.isMocked} '
-              'time=${position.timestamp}');
           final fix = LatLng(position.latitude, position.longitude);
           final lastFix = _lastFixForHeading;
           final lastTime = _lastFixTime;
@@ -285,36 +274,23 @@ class LiveLocationController extends ChangeNotifier {
           // silently leaving the UI stuck on "GPS wird gesucht…" forever.
           if (!forceAccept &&
               position.accuracy > GpsFilterConfig.maxHorizontalAccuracyMeters) {
-            debugPrint(
-                'DIAG rejected: accuracy ${position.accuracy} > ${GpsFilterConfig.maxHorizontalAccuracyMeters} (forceAccept=$forceAccept gapForced=$gapForced elapsed=$elapsedSeconds)');
             return;
           }
           // Applies unconditionally, gap or not — see
           // maxHorizontalAccuracyMetersForced for why.
           if (position.accuracy > GpsFilterConfig.maxHorizontalAccuracyMetersForced) {
-            debugPrint(
-                'DIAG rejected: accuracy ${position.accuracy} > forced ceiling ${GpsFilterConfig.maxHorizontalAccuracyMetersForced}');
             return;
           }
 
           double? currentSpeedMps;
           if (lastFix != null && elapsedSeconds != null && elapsedSeconds > 0) {
             currentSpeedMps = distanceMeters(lastFix, fix) / elapsedSeconds;
-            // Skipped for forced fixes (back to the original behavior) —
-            // briefly making this apply unconditionally, hoping it would
-            // catch network/cell-tower fallback spikes, backfired: a
-            // background-throttled phone can deliver fixes with unreliable
-            // or bunched-up timestamps, which made an *average*-speed
-            // check reject nearly every fix for the whole screen-off
-            // period, reintroducing the original multi-minute-gap problem
-            // this whole backstop exists to prevent. Spikes are now
-            // instead addressed by tightening
-            // maxHorizontalAccuracyMetersForced, which doesn't depend on
-            // comparing against a potentially-stale previous fix.
             if (!forceAccept &&
                 currentSpeedMps > GpsFilterConfig.maxPlausibleSpeedMps) {
-              debugPrint(
-                  'DIAG rejected: speed $currentSpeedMps > ${GpsFilterConfig.maxPlausibleSpeedMps} (forceAccept=$forceAccept elapsed=$elapsedSeconds dist=${distanceMeters(lastFix, fix)})');
+              // Outlier (e.g. a jump right after the screen was locked
+              // and the position stream resumed) — drop it and wait for
+              // the next fix rather than recording/showing an
+              // implausible jump.
               return;
             }
             final lastSpeed = _lastSpeedMps;
@@ -326,15 +302,11 @@ class LiveLocationController extends ChangeNotifier {
               if (acceleration > GpsFilterConfig.maxPlausibleAccelerationMps2) {
                 // The speed alone was plausible, but reaching it that
                 // fast from the last accepted fix isn't.
-                debugPrint(
-                    'DIAG rejected: acceleration $acceleration > ${GpsFilterConfig.maxPlausibleAccelerationMps2}');
                 return;
               }
             }
           }
 
-          debugPrint(
-              'DIAG ACCEPTED accuracy=${position.accuracy} forceAccept=$forceAccept elapsed=$elapsedSeconds');
           _fixTimeoutTimer?.cancel();
           currentPosition = position;
           streamError = null;

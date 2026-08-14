@@ -439,20 +439,6 @@ class _ToursScreenState extends State<ToursScreen> {
     // live-distance one below both still get created but are never shown —
     // tracking itself still works either way.
     await _location.ensureNotificationPermission();
-    // A stronger, OS-level guarantee than a manufacturer's own
-    // battery-saver toggle (e.g. MIUI's), which on some devices still
-    // throttles background location even set to "no restrictions" —
-    // tracking still works if declined, just with a higher risk of the OS
-    // delivering fixes very sparsely while the screen is locked.
-    if (!await _location.ensureIgnoreBatteryOptimizations() && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Akkuoptimierung nicht deaktiviert — Standort-Updates können bei gesperrtem Bildschirm unregelmäßig werden.',
-          ),
-        ),
-      );
-    }
 
     // Upgrades to Android's foreground-service mode now that a Törn is
     // actually being tracked — this is what shows the "Törn läuft"

@@ -72,20 +72,6 @@ class LocationService {
     return status.isGranted;
   }
 
-  // Shows Android's system "exempt this app from battery optimization"
-  // dialog — a stronger, OS-standard guarantee than a manufacturer's own
-  // battery-saver UI (e.g. MIUI's), which on some devices still throttles
-  // background location delivery even when the user has separately set it
-  // to "no restrictions" there. No-op (and no such concept) everywhere
-  // else. Doesn't block starting a Törn if declined/unavailable — tracking
-  // still works, just with a higher risk of the OS throttling fixes while
-  // the screen is locked.
-  Future<bool> ensureIgnoreBatteryOptimizations() async {
-    if (!isAndroidPlatform) return true;
-    final status = await ph.Permission.ignoreBatteryOptimizations.request();
-    return status.isGranted;
-  }
-
   // [background] switches Android to a real foreground service (exempt from
   // Doze/battery suspension, but only justified — and only shows its
   // persistent notification — while a Törn is actually being recorded).

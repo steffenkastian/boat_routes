@@ -32,21 +32,10 @@ class GpsFilterConfig {
   // Applies even when maxGapSeconds forces a fix through — a gap should
   // never end with genuinely nonsensical data (e.g. a coarse cell-tower-
   // only fallback fix off by kilometers) getting baked into the track just
-  // because enough time has passed. Looser than the normal 100m bound
-  // above (this is a last-resort sanity check, not a quality bar), but
-  // NOT as loose as it once was (1000m): that let real network/cell-tower
-  // fallback fixes — which can be off by kilometers while still reporting
-  // an "accuracy" under 1000m — through as sharp track spikes. 300m is a
-  // middle ground: still admits a genuinely degraded-but-real GPS fix
-  // (which even in poor conditions is rarely worse than ~150-200m), while
-  // rejecting most network-only fallbacks. Deliberately not paired with a
-  // speed/distance check against the previous fix (unlike the two checks
-  // below, which explicitly skip forced fixes) — a background-throttled
-  // phone can deliver fixes with unreliable or bunched-up timestamps,
-  // and an average-speed check against those rejected nearly everything
-  // during an extended screen-off period, reintroducing the original
-  // multi-minute-gap problem this whole backstop exists to prevent.
-  static const double maxHorizontalAccuracyMetersForced = 300.0;
+  // because enough time has passed. Deliberately far looser than the
+  // normal 100m bound above; this is a last-resort sanity check, not a
+  // quality bar.
+  static const double maxHorizontalAccuracyMetersForced = 1000.0;
 
   // A fix implying a speed above this (distance from the last accepted fix
   // divided by the time between them), in meters per second, is rejected.
@@ -88,16 +77,6 @@ class GpsFilterConfig {
 // Tuning for simplifyTrack (see track_simplifier.dart), applied once when a
 // Törn is saved to cut down how many points a long recorded track ends up
 // stored/synced/redrawn with.
-//
-// Previously also re-applied periodically *during* recording (every 10
-// minutes, in LiveLocationController) to keep the live in-memory point
-// count bounded too — reverted after a report that recording stopped
-// producing new points at all (even with the screen on) right after that
-// was added. Not confirmed as the actual cause, but removed to eliminate
-// it as a variable while that's being tracked down; revisit re-adding
-// live thinning (ideally batched — e.g. only touch points older than a
-// few minutes, never the most recent stretch) once base recording
-// reliability is confirmed solid again.
 class TrackSimplificationConfig {
   // A point is dropped if it's within this many meters of the straight
   // line its neighbors would otherwise form. 5m keeps real course changes

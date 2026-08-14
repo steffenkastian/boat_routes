@@ -16,12 +16,6 @@
          service still runs (tracking keeps working) but the notification is
          silently never shown. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Lets the app show the system "exempt from battery optimization"
-         dialog (LocationService.ensureIgnoreBatteryOptimizations) — a
-         stronger, OS-level guarantee than a manufacturer battery-saver
-         toggle (e.g. MIUI's own, which some devices still throttle
-         background location through even when set to "no restrictions"). -->
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <application
         android:label="boat_routes_web"
         android:name="${applicationName}"
