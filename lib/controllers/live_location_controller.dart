@@ -295,18 +295,19 @@ class LiveLocationController extends ChangeNotifier {
           double? currentSpeedMps;
           if (lastFix != null && elapsedSeconds != null && elapsedSeconds > 0) {
             currentSpeedMps = distanceMeters(lastFix, fix) / elapsedSeconds;
-            // Applies even when forced through after a gap — unlike the
-            // accuracy ceiling above, an *average* speed over the gap
-            // (distance divided by however long the gap lasted) is
-            // already gap-length-agnostic: a boat genuinely can't average
-            // more than this regardless of how long the signal was lost.
-            // This is what actually rejects a network/cell-tower fallback
-            // fix that's kilometers from the real position — the loose
-            // 1000m accuracy-forced ceiling alone (deliberately permissive,
-            // so a merely-imprecise-but-real fix still gets through) isn't
-            // enough on its own, and let every such fix through as a sharp
-            // spike jumping out to a wrong position and back.
-            if (currentSpeedMps > GpsFilterConfig.maxPlausibleSpeedMps) {
+            // Skipped for forced fixes (back to the original behavior) —
+            // briefly making this apply unconditionally, hoping it would
+            // catch network/cell-tower fallback spikes, backfired: a
+            // background-throttled phone can deliver fixes with unreliable
+            // or bunched-up timestamps, which made an *average*-speed
+            // check reject nearly every fix for the whole screen-off
+            // period, reintroducing the original multi-minute-gap problem
+            // this whole backstop exists to prevent. Spikes are now
+            // instead addressed by tightening
+            // maxHorizontalAccuracyMetersForced, which doesn't depend on
+            // comparing against a potentially-stale previous fix.
+            if (!forceAccept &&
+                currentSpeedMps > GpsFilterConfig.maxPlausibleSpeedMps) {
               debugPrint(
                   'DIAG rejected: speed $currentSpeedMps > ${GpsFilterConfig.maxPlausibleSpeedMps} (forceAccept=$forceAccept elapsed=$elapsedSeconds dist=${distanceMeters(lastFix, fix)})');
               return;
