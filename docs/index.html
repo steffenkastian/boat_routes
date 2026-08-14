@@ -129,6 +129,44 @@
     border-radius: 10px;
   }
   .links a:hover { border-color: var(--accent); }
+  .version-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-top: 16px;
+  }
+  .version-card h3 {
+    margin: 0 0 10px;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .badge-stable { background: #1f8a4c22; color: #1f8a4c; }
+  .badge-beta { background: #b8860022; color: #b88600; }
+  @media (prefers-color-scheme: dark) {
+    .badge-stable { background: #1f8a4c33; color: #4fd685; }
+    .badge-beta { background: #b8860033; color: #f0c04d; }
+  }
+  .version-note {
+    font-size: 13px;
+    margin: 0 0 10px;
+  }
+  .version-card ul {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .version-card li { margin-bottom: 4px; }
   footer {
     text-align: center;
     padding: 24px 20px 48px;
@@ -168,8 +206,33 @@
   <section id="android">
     <h2>Android-App</h2>
     <p>Boat Routes gibt es auch als Android-App mit Hintergrund-GPS-Tracking, das auch bei gesperrtem Bildschirm weiterläuft. Da es die App aktuell nicht im Play Store gibt, muss die Installation aus unbekannten Quellen erlaubt werden.</p>
-    <div class="links">
-      <a href="downloads/boat-routes.apk" rel="noopener">APK direkt herunterladen</a>
+
+    <div class="version-card">
+      <h3>Getestet <span class="badge badge-stable">Stabil</span></h3>
+      <ul>
+        <li>Routen planen und Törns per GPS aufzeichnen (auch im Hintergrund)</li>
+        <li>Mehrere Routen/Törns zu einem Trip kombinieren, mit Seemeilen-Übersicht pro Etappe und gesamt</li>
+        <li>Strecken per Link oder E-Mail teilen</li>
+        <li>Aufgezeichnete Strecken werden beim Speichern automatisch vereinfacht (weniger Speicherplatz)</li>
+        <li>Cloud-Synchronisierung, inkl. manuellem „Jetzt synchronisieren"</li>
+        <li>Routen im Ordner duplizieren, um Alternativen zu planen</li>
+      </ul>
+      <div class="links">
+        <a href="downloads/boat-routes.apk" rel="noopener">APK herunterladen</a>
+      </div>
+    </div>
+
+    <div class="version-card">
+      <h3>Beta <span class="badge badge-beta">Neueste Änderungen</span></h3>
+      <p class="version-note">Enthält Änderungen, die noch nicht vollständig bestätigt sind — aktuell wird an einem Problem mit unregelmäßigem Hintergrund-Tracking auf manchen Geräten gearbeitet.</p>
+      <ul>
+        <li>Track wird jetzt auch laufend während der Aufzeichnung vereinfacht, nicht nur beim Speichern</li>
+        <li>Verbesserter GPS-Ausreißer-Filter (weniger Sprünge bei schwachem Signal)</li>
+        <li>Diagnose-Logging für Hintergrund-Tracking (wird nach Behebung wieder entfernt)</li>
+      </ul>
+      <div class="links">
+        <a href="downloads/boat-routes-beta.apk" rel="noopener">Beta-APK herunterladen</a>
+      </div>
     </div>
   </section>
 
