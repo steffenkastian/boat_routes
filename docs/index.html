@@ -224,9 +224,11 @@
 
     <div class="version-card">
       <h3>Beta <span class="badge badge-beta">Neueste Änderungen</span></h3>
-      <p class="version-note">Alle heutigen Tracking-Experimente wurden zurückgesetzt — dieser Stand ist funktional identisch zur "Getestet"-Version links, damit wieder eine eindeutige Vergleichsbasis besteht. Das Tracking-Problem selbst ist noch ungelöst.</p>
+      <p class="version-note">Basiert auf einer Live-Diagnose auf einem echten Gerät (angeschlossene Debug-Session während einer echten Aufzeichnung) — zwei konkrete, bestätigte Ursachen behoben.</p>
       <ul>
-        <li>GPS-Tracking-Code exakt auf den zuletzt bestätigt guten Stand zurückgesetzt</li>
+        <li>Live-Kartenansicht zentriert jetzt automatisch auf den eigenen Standort beim Törn-Start (vorher blieb sie auf einer festen Standard-Position, Track wurde zwar aufgezeichnet, war aber unsichtbar außerhalb des Kartenausschnitts)</li>
+        <li>Genauigkeits-Grenze von 100m auf 30m verschärft (per Live-Test bestätigt: "Aufwach"-Fixes nach Unterbrechungen lagen wiederholt 40–70m daneben, während normale Fixes durchgehend 1–5m genau waren)</li>
+        <li>Abfrage der System-Akkuoptimierung-Ausnahme beim Törn-Start wieder eingebaut — per Zeitstempel bestätigt, dass ohne sie bei gesperrtem Bildschirm über Minuten hinweg gar keine Fixes ankamen</li>
       </ul>
       <div class="links">
         <a href="downloads/boat-routes-beta.apk" rel="noopener">Beta-APK herunterladen</a>
