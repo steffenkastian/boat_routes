@@ -88,18 +88,20 @@ class GpsFilterConfig {
 // Tuning for simplifyTrack (see track_simplifier.dart), applied once when a
 // Törn is saved to cut down how many points a long recorded track ends up
 // stored/synced/redrawn with.
+//
+// Previously also re-applied periodically *during* recording (every 10
+// minutes, in LiveLocationController) to keep the live in-memory point
+// count bounded too — reverted after a report that recording stopped
+// producing new points at all (even with the screen on) right after that
+// was added. Not confirmed as the actual cause, but removed to eliminate
+// it as a variable while that's being tracked down; revisit re-adding
+// live thinning (ideally batched — e.g. only touch points older than a
+// few minutes, never the most recent stretch) once base recording
+// reliability is confirmed solid again.
 class TrackSimplificationConfig {
   // A point is dropped if it's within this many meters of the straight
   // line its neighbors would otherwise form. 5m keeps real course changes
   // (e.g. tacking) intact while cutting GPS noise and near-straight
   // stretches down to far fewer points.
   static const double toleranceMeters = 5.0;
-
-  // How often LiveLocationController re-simplifies the track *while still
-  // recording* (see startRecording), not just once at the end — keeps a
-  // long Törn's in-memory point count from growing unbounded for its whole
-  // duration. The most recent fixes (since the last run) are always left
-  // untouched between runs, so this never affects the live position/
-  // heading/outlier-filter logic, which only ever looks at the latest fix.
-  static const Duration liveSimplificationInterval = Duration(minutes: 10);
 }

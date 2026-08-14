@@ -9,7 +9,6 @@ import '../config.dart';
 import '../services/location_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/marker_icon_factory.dart';
-import '../utils/track_simplifier.dart';
 
 // Owns GPS permission/subscription handling, the computed course-over-ground,
 // and the boat arrow marker — shared by any screen that needs to show the
@@ -63,7 +62,6 @@ class LiveLocationController extends ChangeNotifier {
   DateTime? _streamStartTime;
 
   Timer? _fixTimeoutTimer;
-  Timer? _periodicSimplifyTimer;
 
   geo.Position? currentPosition;
   double? displayedHeading;
@@ -149,6 +147,13 @@ class LiveLocationController extends ChangeNotifier {
   // notification and the separate live-distance one in tours_screen.dart.
   Future<bool> ensureNotificationPermission() =>
       _locationService.ensureNotificationPermission();
+
+  // Android-only (no-op elsewhere): shows the system dialog to exempt this
+  // app from battery optimization — see LocationService for why this is
+  // worth asking for separately from the manufacturer's own battery-saver
+  // settings.
+  Future<bool> ensureIgnoreBatteryOptimizations() =>
+      _locationService.ensureIgnoreBatteryOptimizations();
 
   // Called both automatically on startup and from a manual tap on the
   // location button. The manual tap matters on mobile browsers, which
@@ -374,38 +379,11 @@ class LiveLocationController extends ChangeNotifier {
     if (position != null) {
       track.add(LatLng(position.latitude, position.longitude));
     }
-    _periodicSimplifyTimer?.cancel();
-    _periodicSimplifyTimer = Timer.periodic(
-      TrackSimplificationConfig.liveSimplificationInterval,
-      (_) => _simplifyTrackSoFar(),
-    );
-    _safeNotify();
-  }
-
-  // Compacts what's been recorded so far, in place — keeps a long Törn's
-  // in-memory (and, if the app is killed mid-Törn, eventually persisted)
-  // point count from growing unbounded for the whole recording, rather
-  // than only cutting it down once at the very end. Safe to run mid-
-  // stream: simplifyTrack always keeps the first and last point of
-  // whatever it's given, so the most recent fix — the only one any other
-  // logic here (heading, outlier filtering, the boat marker) ever reads —
-  // is untouched by it.
-  void _simplifyTrackSoFar() {
-    if (track.length < 3) return;
-    final simplified = simplifyTrack(
-      track,
-      toleranceMeters: TrackSimplificationConfig.toleranceMeters,
-    );
-    if (simplified.length == track.length) return;
-    track
-      ..clear()
-      ..addAll(simplified);
     _safeNotify();
   }
 
   List<LatLng> stopRecording() {
     isRecording = false;
-    _periodicSimplifyTimer?.cancel();
     final result = List<LatLng>.of(track);
     _safeNotify();
     return result;
@@ -416,7 +394,6 @@ class LiveLocationController extends ChangeNotifier {
     _disposed = true;
     _positionSub?.cancel();
     _fixTimeoutTimer?.cancel();
-    _periodicSimplifyTimer?.cancel();
     super.dispose();
   }
 }
