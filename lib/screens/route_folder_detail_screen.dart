@@ -130,6 +130,27 @@ class _RouteFolderDetailScreenState extends State<RouteFolderDetailScreen> {
     ));
   }
 
+  // Makes an independent copy (fresh id, so editing one never touches the
+  // other) right after the original in this folder — for trying an
+  // alternative for one leg without losing the original to compare
+  // against or fall back to.
+  Future<void> _duplicateRoute(BoatRoute route) async {
+    final copy = BoatRoute(name: '${route.name} (Kopie)', points: route.points);
+    await _routeStorage.addRoute(copy);
+    setState(() => _allRoutes = [..._allRoutes, copy]);
+
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      try {
+        await _userLibrary.addRoute(uid, copy);
+      } catch (_) {}
+    }
+
+    final insertAt = _folder.routeIds.indexOf(route.id) + 1;
+    final routeIds = List<String>.of(_folder.routeIds)..insert(insertAt, copy.id);
+    await _persist(_folder.copyWith(routeIds: routeIds));
+  }
+
   // Reorders by id rather than touching _folder.routeIds by raw index —
   // _legs silently drops any id that no longer resolves to a saved route,
   // so its indices don't necessarily line up 1:1 with routeIds once that's
@@ -293,12 +314,19 @@ class _RouteFolderDetailScreenState extends State<RouteFolderDetailScreen> {
                                       PopupMenuButton<String>(
                                         onSelected: (value) {
                                           if (value == 'view') _viewLeg(route);
+                                          if (value == 'duplicate') {
+                                            _duplicateRoute(route);
+                                          }
                                           if (value == 'remove') _removeRoute(route);
                                         },
                                         itemBuilder: (context) => const [
                                           PopupMenuItem(
                                             value: 'view',
                                             child: Text('Route ansehen'),
+                                          ),
+                                          PopupMenuItem(
+                                            value: 'duplicate',
+                                            child: Text('Route duplizieren'),
                                           ),
                                           PopupMenuItem(
                                             value: 'remove',
