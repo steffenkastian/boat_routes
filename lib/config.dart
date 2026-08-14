@@ -20,14 +20,20 @@ class GpsFilterConfig {
   // accuracy fix is very often the actual *source* of an apparent "jump",
   // not real boat movement, so this alone catches a lot of outliers early.
   //
-  // 100m rather than something tighter: a phone tracking in the background
-  // (in a pocket, below deck, screen locked) routinely reports temporarily
-  // degraded accuracy — a stricter threshold here doesn't just reject
-  // outliers, it silently drops *all* real fixes for however long accuracy
-  // stays degraded, which showed up as multi-minute gaps in a recorded
-  // track. maxGapSeconds below is the backstop for whatever this still
-  // doesn't cover.
-  static const double maxHorizontalAccuracyMeters = 100.0;
+  // Was 100m on the theory that a backgrounded phone routinely reports
+  // temporarily degraded accuracy — live testing on a real device showed
+  // the opposite: normal fixes were consistently 1-5m, and the only fixes
+  // in the 18-76m range were single, isolated ones landing 40-70m from the
+  // real (stationary) position, always right as the location provider
+  // resumed after a pause (background-mode switch, screen on/off) and
+  // always immediately followed by another fix back at the correct spot
+  // 5-8s later. That's a real "startup" fix from the provider re-
+  // acquiring lock, not degraded-but-real GPS — 100m let every one of
+  // these through as a visible jump. 30m still admits genuinely degraded
+  // conditions well above what real fixes on this device ever showed, and
+  // maxGapSeconds below remains the backstop if accuracy really does stay
+  // bad for an extended stretch.
+  static const double maxHorizontalAccuracyMeters = 30.0;
 
   // Applies even when maxGapSeconds forces a fix through — a gap should
   // never end with genuinely nonsensical data (e.g. a coarse cell-tower-
