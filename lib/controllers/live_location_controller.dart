@@ -9,6 +9,7 @@ import '../config.dart';
 import '../services/location_service.dart';
 import '../utils/geo_utils.dart';
 import '../utils/marker_icon_factory.dart';
+import '../utils/track_simplifier.dart';
 
 // Owns GPS permission/subscription handling, the computed course-over-ground,
 // and the boat arrow marker — shared by any screen that needs to show the
@@ -62,6 +63,7 @@ class LiveLocationController extends ChangeNotifier {
   DateTime? _streamStartTime;
 
   Timer? _fixTimeoutTimer;
+  Timer? _periodicSimplifyTimer;
 
   geo.Position? currentPosition;
   double? displayedHeading;
@@ -285,12 +287,18 @@ class LiveLocationController extends ChangeNotifier {
           double? currentSpeedMps;
           if (lastFix != null && elapsedSeconds != null && elapsedSeconds > 0) {
             currentSpeedMps = distanceMeters(lastFix, fix) / elapsedSeconds;
-            if (!forceAccept &&
-                currentSpeedMps > GpsFilterConfig.maxPlausibleSpeedMps) {
-              // Outlier (e.g. a jump right after the screen was locked
-              // and the position stream resumed) — drop it and wait for
-              // the next fix rather than recording/showing an
-              // implausible jump.
+            // Applies even when forced through after a gap — unlike the
+            // accuracy ceiling above, an *average* speed over the gap
+            // (distance divided by however long the gap lasted) is
+            // already gap-length-agnostic: a boat genuinely can't average
+            // more than this regardless of how long the signal was lost.
+            // This is what actually rejects a network/cell-tower fallback
+            // fix that's kilometers from the real position — the loose
+            // 1000m accuracy-forced ceiling alone (deliberately permissive,
+            // so a merely-imprecise-but-real fix still gets through) isn't
+            // enough on its own, and let every such fix through as a sharp
+            // spike jumping out to a wrong position and back.
+            if (currentSpeedMps > GpsFilterConfig.maxPlausibleSpeedMps) {
               return;
             }
             final lastSpeed = _lastSpeedMps;
@@ -351,11 +359,38 @@ class LiveLocationController extends ChangeNotifier {
     if (position != null) {
       track.add(LatLng(position.latitude, position.longitude));
     }
+    _periodicSimplifyTimer?.cancel();
+    _periodicSimplifyTimer = Timer.periodic(
+      TrackSimplificationConfig.liveSimplificationInterval,
+      (_) => _simplifyTrackSoFar(),
+    );
+    _safeNotify();
+  }
+
+  // Compacts what's been recorded so far, in place — keeps a long Törn's
+  // in-memory (and, if the app is killed mid-Törn, eventually persisted)
+  // point count from growing unbounded for the whole recording, rather
+  // than only cutting it down once at the very end. Safe to run mid-
+  // stream: simplifyTrack always keeps the first and last point of
+  // whatever it's given, so the most recent fix — the only one any other
+  // logic here (heading, outlier filtering, the boat marker) ever reads —
+  // is untouched by it.
+  void _simplifyTrackSoFar() {
+    if (track.length < 3) return;
+    final simplified = simplifyTrack(
+      track,
+      toleranceMeters: TrackSimplificationConfig.toleranceMeters,
+    );
+    if (simplified.length == track.length) return;
+    track
+      ..clear()
+      ..addAll(simplified);
     _safeNotify();
   }
 
   List<LatLng> stopRecording() {
     isRecording = false;
+    _periodicSimplifyTimer?.cancel();
     final result = List<LatLng>.of(track);
     _safeNotify();
     return result;
@@ -366,6 +401,7 @@ class LiveLocationController extends ChangeNotifier {
     _disposed = true;
     _positionSub?.cancel();
     _fixTimeoutTimer?.cancel();
+    _periodicSimplifyTimer?.cancel();
     super.dispose();
   }
 }

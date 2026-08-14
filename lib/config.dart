@@ -83,4 +83,12 @@ class TrackSimplificationConfig {
   // (e.g. tacking) intact while cutting GPS noise and near-straight
   // stretches down to far fewer points.
   static const double toleranceMeters = 5.0;
+
+  // How often LiveLocationController re-simplifies the track *while still
+  // recording* (see startRecording), not just once at the end — keeps a
+  // long Törn's in-memory point count from growing unbounded for its whole
+  // duration. The most recent fixes (since the last run) are always left
+  // untouched between runs, so this never affects the live position/
+  // heading/outlier-filter logic, which only ever looks at the latest fix.
+  static const Duration liveSimplificationInterval = Duration(minutes: 10);
 }
