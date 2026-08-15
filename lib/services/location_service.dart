@@ -105,21 +105,32 @@ class LocationService {
   }
 
   LocationSettings _defaultSettings({bool background = false}) {
-    if (isAndroidPlatform && background) {
-      // A foregroundNotificationConfig makes geolocator_android run a real
-      // foreground service, which is what actually sustains these updates
-      // through a screen lock (Android exempts foreground services from
-      // Doze/battery suspension) — the same fine-grained distanceFilter
-      // keeps working in the background instead of needing a coarser
-      // interval-based fallback.
+    if (isAndroidPlatform) {
+      // intervalDuration matters even outside background/foreground-
+      // service mode: geolocator_android applies a 5000ms interval
+      // between active location update *requests* if this is left
+      // unset, which silently caps fixes at least 5s apart regardless of
+      // distanceFilter — exactly what every live-tested log showed
+      // (nothing ever arrived faster than ~5s, screen on or off, moving
+      // or not). 1s lets distanceFilter (3m) actually be the limiting
+      // factor, as originally intended.
       return AndroidSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: 3,
-        foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: 'Törn läuft',
-          notificationText: 'Standort wird aufgezeichnet',
-          enableWakeLock: true,
-        ),
+        intervalDuration: const Duration(seconds: 1),
+        // A foregroundNotificationConfig makes geolocator_android run a
+        // foreground service, which reduces (but — per the plugin's own
+        // docs — does not fully guarantee) how likely Android is to
+        // suspend updates through a screen lock. Only set once a Törn is
+        // actually being recorded; plain "show my current position" use
+        // doesn't need it.
+        foregroundNotificationConfig: background
+            ? const ForegroundNotificationConfig(
+                notificationTitle: 'Törn läuft',
+                notificationText: 'Standort wird aufgezeichnet',
+                enableWakeLock: true,
+              )
+            : null,
       );
     }
     return const LocationSettings(
