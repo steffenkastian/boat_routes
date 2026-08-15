@@ -61,6 +61,16 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- flutter_background_service's own Android Service: runs Törn
+             recording in a genuinely independent isolate/engine, not tied to
+             MainActivity, unlike geolocator_android's
+             foregroundNotificationConfig (see background_tracking_service.dart
+             for why that distinction matters). foregroundServiceType must
+             match one of the FOREGROUND_SERVICE_* permissions above. -->
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:foregroundServiceType="location"
+            android:exported="true" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

@@ -45,6 +45,7 @@ dependencies:
   wakelock_plus: ^1.2.8
   google_sign_in: ^7.2.0
   flutter_local_notifications: ^20.1.0
+  flutter_background_service: ^5.1.0
 
 dev_dependencies:
   flutter_test:

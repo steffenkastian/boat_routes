@@ -5,9 +5,9 @@ import 'package:flutter/services.dart' show MissingPluginException;
 import 'package:geolocator/geolocator.dart' as geo;
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../config.dart';
 import '../services/location_service.dart';
 import '../utils/geo_utils.dart';
+import '../utils/gps_fix_filter.dart';
 import '../utils/marker_icon_factory.dart';
 
 // Owns GPS permission/subscription handling, the computed course-over-ground,
@@ -38,28 +38,10 @@ class LiveLocationController extends ChangeNotifier {
   // degree, so this stays a handful of icons instead of one per fix.
   final Map<int, BitmapDescriptor> _boatIconsByHeading = {};
   final Set<int> _pendingBoatIconBuckets = {};
-  LatLng? _lastFixForHeading;
-  DateTime? _lastFixTime;
-  // Speed implied by the last *accepted* fix — kept alongside the position/
-  // time so the acceleration outlier check below has something to compare
-  // against, without needing to trust geo.Position.speed (device-reported,
-  // not always populated/reliable across platforms).
-  double? _lastSpeedMps;
-  // True when the last accepted fix bypassed the accuracy/speed/
-  // acceleration checks (GpsFilterConfig.maxGapSeconds) rather than
-  // genuinely passing them — its own position can't be trusted as a
-  // baseline either, so the fix immediately after it is forced through
-  // too, rather than potentially being rejected for looking like an
-  // implausible jump *from* an already-shaky position.
-  bool _lastFixWasForced = false;
-  // When set (by start()) and no fix has been accepted yet (_lastFixTime
-  // still null), stands in for "time since the last accepted fix" so
-  // maxGapSeconds can still engage — without this, a Törn that starts
-  // somewhere with persistently poor accuracy would reject every single
-  // fix from the very first one (elapsedSeconds is only computable once
-  // there *is* a previous accepted fix) and never reach the backstop at
-  // all.
-  DateTime? _streamStartTime;
+  // Accept/reject logic lives in GpsFixFilter (shared with
+  // BackgroundTrackingService's own isolate) rather than here, so both
+  // paths reject outliers identically.
+  GpsFixFilter _filter = GpsFixFilter();
 
   Timer? _fixTimeoutTimer;
 
@@ -168,11 +150,11 @@ class LiveLocationController extends ChangeNotifier {
   // shows up as "GPS wird gesucht…" forever with no way to tell what went
   // wrong.
   //
-  // [background] is forwarded to LocationService.positionStream() — pass
-  // true only when actually recording a Törn (see tours_screen.dart),
-  // never for a plain "show my position" call, since on Android it starts
-  // a foreground service with a persistent notification.
-  Future<void> start({bool isRetry = false, bool background = false}) async {
+  // Purely the cosmetic live-HUD/marker stream — never runs a foreground
+  // service. Recording a Törn's actual saved track is
+  // BackgroundTrackingService's job (see tours_screen.dart), independent of
+  // this controller.
+  Future<void> start({bool isRetry = false}) async {
     await _positionSub?.cancel();
     _fixTimeoutTimer?.cancel();
     streamError = null;
@@ -180,14 +162,10 @@ class LiveLocationController extends ChangeNotifier {
     // fix from a brand new subscription (e.g. tours_screen.dart restarting
     // into/out of foreground-service mode) against one from the old one can
     // have a tiny elapsed time between two otherwise-normal fixes, which
-    // the outlier speed check in the listener below misreads as an
-    // implausible jump and silently drops — showing a false "no GPS" error
-    // right as tracking starts.
-    _lastFixForHeading = null;
-    _lastFixTime = null;
-    _lastSpeedMps = null;
-    _lastFixWasForced = false;
-    _streamStartTime = DateTime.now();
+    // the outlier speed check in the filter misreads as an implausible
+    // jump and silently drops — showing a false "no GPS" error right as
+    // tracking starts.
+    _filter = GpsFixFilter();
     _safeNotify();
 
     final LocationAccessStatus result;
@@ -214,7 +192,7 @@ class LiveLocationController extends ChangeNotifier {
         return;
       }
       await Future.delayed(const Duration(milliseconds: 800));
-      return start(isRetry: true, background: background);
+      return start(isRetry: true);
     } catch (e) {
       // Temporarily surfacing the raw error text (instead of a generic
       // message) to diagnose an unexpected failure on some mobile browsers.
@@ -237,86 +215,15 @@ class LiveLocationController extends ChangeNotifier {
 
     try {
       _positionSub =
-          _locationService.positionStream(background: background).listen(
+          _locationService.positionStream().listen(
         (position) {
           debugPrint(
               'DIAG fix received lat=${position.latitude} lng=${position.longitude} '
               'accuracy=${position.accuracy} time=${position.timestamp} '
               'isRecording=$isRecording wallClock=${DateTime.now()}');
-          final fix = LatLng(position.latitude, position.longitude);
-          final lastFix = _lastFixForHeading;
-          final lastTime = _lastFixTime;
-          final elapsedSeconds = lastTime == null
-              ? null
-              : position.timestamp.difference(lastTime).inMilliseconds / 1000;
-          // Every check below exists to reject one bad-looking fix and
-          // wait for the next — none of them are designed to cope with
-          // conditions (e.g. degraded accuracy) that persist for minutes,
-          // which no fixed threshold can fully rule out. Without this,
-          // that showed up as multi-minute gaps in a recorded track
-          // instead of just occasionally-noisier points.
-          //
-          // Falls back to _streamStartTime when there's no accepted fix
-          // yet at all (elapsedSeconds is only computable once there is
-          // one) — otherwise a Törn starting somewhere with persistently
-          // poor accuracy would reject every fix from the first one
-          // onward and never reach this backstop in the first place.
-          final gapForced = elapsedSeconds != null
-              ? elapsedSeconds >= GpsFilterConfig.maxGapSeconds
-              : _streamStartTime != null &&
-                  position.timestamp.difference(_streamStartTime!).inSeconds >=
-                      GpsFilterConfig.maxGapSeconds;
-          // _lastFixWasForced also forces *this* fix through, exactly
-          // once: the previous fix's own position can't be trusted as a
-          // comparison baseline either, so rejecting this one for looking
-          // like a jump from that shaky baseline would just reproduce the
-          // gap one step later. _lastFixWasForced is set to gapForced
-          // (not to forceAccept) below specifically so this grace period
-          // lasts one fix, not indefinitely — otherwise it would stay
-          // true forever once triggered and permanently disable outlier
-          // rejection for the rest of the session.
-          final forceAccept = gapForced || _lastFixWasForced;
-
-          // Dropped before any comparison to previous fixes — see
-          // GpsFilterConfig.maxHorizontalAccuracyMeters for why. Doesn't
-          // cancel _fixTimeoutTimer: if every fix keeps getting rejected
-          // (e.g. persistently poor accuracy), the original 10s timer
-          // should still fire and surface that as "no GPS data" instead of
-          // silently leaving the UI stuck on "GPS wird gesucht…" forever.
-          if (!forceAccept &&
-              position.accuracy > GpsFilterConfig.maxHorizontalAccuracyMeters) {
-            return;
-          }
-          // Applies unconditionally, gap or not — see
-          // maxHorizontalAccuracyMetersForced for why.
-          if (position.accuracy > GpsFilterConfig.maxHorizontalAccuracyMetersForced) {
-            return;
-          }
-
-          double? currentSpeedMps;
-          if (lastFix != null && elapsedSeconds != null && elapsedSeconds > 0) {
-            currentSpeedMps = distanceMeters(lastFix, fix) / elapsedSeconds;
-            if (!forceAccept &&
-                currentSpeedMps > GpsFilterConfig.maxPlausibleSpeedMps) {
-              // Outlier (e.g. a jump right after the screen was locked
-              // and the position stream resumed) — drop it and wait for
-              // the next fix rather than recording/showing an
-              // implausible jump.
-              return;
-            }
-            final lastSpeed = _lastSpeedMps;
-            if (!forceAccept &&
-                lastSpeed != null &&
-                elapsedSeconds >= GpsFilterConfig.minSecondsForAccelerationCheck) {
-              final acceleration =
-                  (currentSpeedMps - lastSpeed).abs() / elapsedSeconds;
-              if (acceleration > GpsFilterConfig.maxPlausibleAccelerationMps2) {
-                // The speed alone was plausible, but reaching it that
-                // fast from the last accepted fix isn't.
-                return;
-              }
-            }
-          }
+          final lastFix = _filter.lastAcceptedFix;
+          final fix = _filter.evaluate(position);
+          if (fix == null) return;
 
           _fixTimeoutTimer?.cancel();
           currentPosition = position;
@@ -325,22 +232,6 @@ class LiveLocationController extends ChangeNotifier {
               distanceMeters(lastFix, fix) >= _minMovementForHeadingMeters) {
             displayedHeading = bearing(lastFix, fix);
           }
-          _lastFixForHeading = fix;
-          _lastFixTime = position.timestamp;
-          // Not the forced fix's own currentSpeedMps: speed averaged over
-          // a maxGapSeconds+ span is a poor proxy for instantaneous speed
-          // regardless of whether it happens to be under the threshold,
-          // and using it as the acceleration baseline would just make the
-          // *next* normal fix look like an implausible deceleration and
-          // get rejected — recreating the gap this was meant to fix, one
-          // step later.
-          _lastSpeedMps = forceAccept ? null : (currentSpeedMps ?? _lastSpeedMps);
-          // gapForced, not forceAccept: this must only stay true for the
-          // one fix right after an actual gap, or it would never flip
-          // back to false again (forceAccept feeds back into it) and
-          // permanently disable outlier rejection for the rest of the
-          // session.
-          _lastFixWasForced = gapForced;
           if (isRecording) track.add(fix);
           _safeNotify();
         },
@@ -353,7 +244,7 @@ class LiveLocationController extends ChangeNotifier {
           debugPrint('DIAG stream onDone (completed!) at ${DateTime.now()}');
         },
       );
-      debugPrint('DIAG positionStream subscribed, background=$background at ${DateTime.now()}');
+      debugPrint('DIAG positionStream subscribed at ${DateTime.now()}');
     } catch (e) {
       debugPrint('DIAG positionStream() threw: $e at ${DateTime.now()}');
       streamError = 'Standort-Stream konnte nicht gestartet werden';

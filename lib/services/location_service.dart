@@ -89,48 +89,33 @@ class LocationService {
     return status.isGranted;
   }
 
-  // [background] switches Android to a real foreground service (exempt from
-  // Doze/battery suspension, but only justified — and only shows its
-  // persistent notification — while a Törn is actually being recorded).
-  // Plain "show my current position" use (Route planen, and the Törns
-  // screen before a Törn is started) stays in normal mode: no service, no
-  // notification, since nothing needs to survive a screen lock there.
-  Stream<Position> positionStream({
-    LocationSettings? settings,
-    bool background = false,
-  }) {
+  // Used both for LiveLocationController's live-HUD stream and, separately,
+  // from inside BackgroundTrackingService's own isolate while a Törn is
+  // being recorded — the latter runs inside flutter_background_service's
+  // own Android foreground Service, which is what now provides the
+  // Doze/battery-suspension exemption (see background_tracking_service.dart)
+  // rather than a geolocator-level foregroundNotificationConfig, which its
+  // own docs say does not actually guarantee background survival.
+  Stream<Position> positionStream({LocationSettings? settings}) {
     return Geolocator.getPositionStream(
-      locationSettings: settings ?? _defaultSettings(background: background),
+      locationSettings: settings ?? _defaultSettings(),
     );
   }
 
-  LocationSettings _defaultSettings({bool background = false}) {
+  LocationSettings _defaultSettings() {
     if (isAndroidPlatform) {
-      // intervalDuration matters even outside background/foreground-
-      // service mode: geolocator_android applies a 5000ms interval
-      // between active location update *requests* if this is left
-      // unset, which silently caps fixes at least 5s apart regardless of
-      // distanceFilter — exactly what every live-tested log showed
-      // (nothing ever arrived faster than ~5s, screen on or off, moving
-      // or not). 1s lets distanceFilter (3m) actually be the limiting
-      // factor, as originally intended.
+      // intervalDuration matters even in plain (non-foreground-service)
+      // mode: geolocator_android applies a 5000ms interval between active
+      // location update *requests* if this is left unset, which silently
+      // caps fixes at least 5s apart regardless of distanceFilter —
+      // exactly what every live-tested log showed (nothing ever arrived
+      // faster than ~5s, screen on or off, moving or not). 1s lets
+      // distanceFilter (3m) actually be the limiting factor, as originally
+      // intended.
       return AndroidSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: 3,
         intervalDuration: const Duration(seconds: 1),
-        // A foregroundNotificationConfig makes geolocator_android run a
-        // foreground service, which reduces (but — per the plugin's own
-        // docs — does not fully guarantee) how likely Android is to
-        // suspend updates through a screen lock. Only set once a Törn is
-        // actually being recorded; plain "show my current position" use
-        // doesn't need it.
-        foregroundNotificationConfig: background
-            ? const ForegroundNotificationConfig(
-                notificationTitle: 'Törn läuft',
-                notificationText: 'Standort wird aufgezeichnet',
-                enableWakeLock: true,
-              )
-            : null,
       );
     }
     return const LocationSettings(

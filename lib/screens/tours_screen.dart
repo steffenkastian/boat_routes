@@ -11,6 +11,7 @@ import '../models/regatta.dart';
 import '../models/tour.dart';
 import '../models/tour_folder.dart';
 import '../services/auth_service.dart';
+import '../services/background_tracking_service.dart';
 import '../services/location_service.dart';
 import '../services/regatta_storage_service.dart';
 import '../services/share_service.dart';
@@ -473,26 +474,36 @@ class _ToursScreenState extends State<ToursScreen> {
       );
     }
 
-    // Upgrades to Android's foreground-service mode now that a Törn is
-    // actually being tracked — this is what shows the "Törn läuft"
-    // notification and survives a screen lock, unlike the plain stream
-    // that's been running since initState() (which pre-warms the GPS lock
-    // without a service/notification). Restarting the stream here doesn't
-    // repeat the up-to-a-minute cold-start wait: the underlying GPS/GNSS
-    // receiver stays warm across the restart, only the Dart-level
-    // subscription is new.
-    await _location.start(background: true);
+    // Starts flutter_background_service's own, genuinely independent
+    // Android foreground Service — a separate isolate/engine that keeps
+    // fetching and persisting GPS fixes even if Android tears down the main
+    // Activity/Flutter engine under memory pressure while the screen is
+    // locked, unlike geolocator_android's foregroundNotificationConfig
+    // (which its own docs say does not guarantee that). This is now the
+    // sole authoritative source for the points a Törn is actually saved
+    // with — see _endTour() and background_tracking_service.dart.
+    // _location's own stream (running since initState()) keeps going
+    // unchanged, purely for the live HUD/marker while the app is visible.
+    await BackgroundTrackingService().start();
 
-    // True background tracking (screen off, browser tab backgrounded) isn't
-    // achievable for a web app — mobile browsers throttle/suspend
-    // geolocation once the screen locks. Keeping the screen awake is the
-    // practical equivalent, and also avoids the GPS jump that tends to
-    // happen right as the stream is suspended/resumed around a lock.
+    // True background tracking still benefits from keeping the screen
+    // awake when possible: it avoids the GPS jump that tends to happen
+    // right as a stream is suspended/resumed around a screen lock, on top
+    // of whatever the background service alone achieves.
     await WakelockPlus.enable();
   }
 
   Future<void> _endTour() async {
-    final points = _location.stopRecording();
+    // BackgroundTrackingService is the authoritative source (see
+    // _startTour()); _location's own track is only a fallback for the rare
+    // case where the background service failed to capture anything at all
+    // (e.g. couldn't start on some locked-down device), so a Törn is never
+    // silently saved as empty when the live view clearly showed a track.
+    final liveTrackFallback = _location.stopRecording();
+    var points = await BackgroundTrackingService().stop();
+    if (points.isEmpty && liveTrackFallback.isNotEmpty) {
+      points = liveTrackFallback;
+    }
     final startedAt = _startedAt;
     setState(() {
       _isTracking = false;
@@ -500,10 +511,6 @@ class _ToursScreenState extends State<ToursScreen> {
       _queriedPoint = null;
     });
     await _tourNotification.cancel();
-    // Downgrades back out of foreground-service mode — otherwise the
-    // "Törn läuft" notification and background service would keep running
-    // indefinitely after tracking has actually stopped.
-    await _location.start();
     await WakelockPlus.disable();
     if (!mounted) return;
     if (points.isEmpty || startedAt == null) {
