@@ -228,6 +228,7 @@
       <h3>Beta <span class="badge badge-beta">Neueste Änderungen</span></h3>
       <p class="version-note">Basiert auf einer Live-Diagnose auf einem echten Gerät (angeschlossene Debug-Session während einer echten Aufzeichnung) — zwei konkrete, bestätigte Ursachen behoben.</p>
       <ul>
+        <li>Android nahm nie schneller als alle 5 Sekunden einen neuen Standort — ein stiller Bibliotheks-Standardwert, jetzt explizit auf 1 Sekunde gesetzt, damit häufigere, genauere Punkte möglich sind</li>
         <li>Live-Kartenansicht zentriert jetzt automatisch auf den eigenen Standort beim Törn-Start (vorher blieb sie auf einer festen Standard-Position, Track wurde zwar aufgezeichnet, war aber unsichtbar außerhalb des Kartenausschnitts)</li>
         <li>Genauigkeits-Grenze von 100m auf 30m verschärft (per Live-Test bestätigt: "Aufwach"-Fixes nach Unterbrechungen lagen wiederholt 40–70m daneben, während normale Fixes durchgehend 1–5m genau waren)</li>
         <li>Abfrage der System-Akkuoptimierung-Ausnahme beim Törn-Start wieder eingebaut — per Zeitstempel bestätigt, dass ohne sie bei gesperrtem Bildschirm über Minuten hinweg gar keine Fixes ankamen</li>
